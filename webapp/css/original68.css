@@ -836,3 +836,14 @@ body { background-image: none; background-color: var(--night); }
 }
 .o68-accueil__lieux .bienvenue__info-icone { margin-top: 2px; }
 .bienvenue__langues { margin-top: 14px; }
+
+/* Le chargement ne montre que le logo et son anneau : le journal, le
+   pourcentage et la phrase disparaissent de l'écran. La phrase reste
+   lisible par les lecteurs d'écran (le journal et le pourcentage leur
+   étaient déjà cachés). */
+.charge__journal,
+.charge__pct { display: none !important; }
+.charge__texte-zone {
+  position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
