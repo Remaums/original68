@@ -28,36 +28,36 @@
    données en composantes brutes pour pouvoir moduler l'opacité avec
    la syntaxe rgb(var(--x) / .5). */
 :root {
-  /* La Grosse Frappe — d'après la maquette : une affiche au soleil couchant
-     derrière, et devant des panneaux de verre vert sombre, un lettrage or
-     qui brille en vert, des boutons verts. Les noms des variables viennent
-     de Tanja ; ils sont cités partout, seules les valeurs changent. */
-  --void-rgb:     3  8  6;    /* fonds d'écran modaux */
-  --night-rgb:    7 14 11;    /* fond de page, sous l'affiche */
-  --night2-rgb:   9 19 14;    /* barres hautes et basses */
-  --panel-rgb:   15 31 23;    /* surface haute (cartes, panneaux) */
-  --panel2-rgb:  11 24 18;    /* surface basse */
-  --ink-rgb:      4  9  7;    /* contours, et texte posé sur le vert */
-  --cream-rgb:  241 237 224;  /* texte — blanc chaud */
-  --line-rgb:    70 200 130;  /* filets et bordures : le vert, éteint */
+  /* Original68 — d'après l'appli de la maison : une nuit violette, des
+     panneaux indigo bordés de violet, un violet électrique pour ce qu'on
+     touche, et le « 68 » en dégradé violet-rose. Les noms des variables
+     viennent de Tanja ; ils sont cités partout, seules les valeurs changent. */
+  --void-rgb:     9  6 22;    /* fonds d'écran modaux */
+  --night-rgb:   14 10 32;    /* fond de page, sous le logo */
+  --night2-rgb:  18 13 40;    /* barres hautes et basses */
+  --panel-rgb:   28 21 62;    /* surface haute (cartes, panneaux) */
+  --panel2-rgb:  22 16 50;    /* surface basse */
+  --ink-rgb:      8  5 20;    /* contours */
+  --cream-rgb:  240 236 255;  /* texte — blanc lavande */
+  --line-rgb:   140 120 255;  /* filets et bordures */
 
-  /* Le vert de la maquette : ce qui s'allume, ce qu'on touche. */
-  --neon-rgb:   46 224 122;
-  --halo-rgb:   46 224 122;
-  --halo2-rgb: 255  72  72;   /* favoris, rouge des promos */
-  --halo3-rgb: 245 190  80;   /* compteurs */
+  /* Le violet électrique : ce qui s'allume, ce qu'on touche. */
+  --neon-rgb:  124  92 255;
+  --halo-rgb:  124  92 255;
+  --halo2-rgb: 255  92 160;   /* favoris */
+  --halo3-rgb: 196 181 253;   /* compteurs */
 
-  /* L'or du titre : la marque, les prix. */
-  --jaune-rgb: 236 200 110;
-  --gold-rgb:  236 200 110;
-  --gold-lo-rgb: 176 136  56;
-  --rouille-rgb: 168  40  40; /* le rouge du drapeau et de la djellaba */
-  --red-rgb:   255  72  72;
+  /* Le lavande des intitulés et des prix. */
+  --jaune-rgb: 196 181 253;
+  --gold-rgb:  196 181 253;
+  --gold-lo-rgb: 124  92 255;
+  --rouille-rgb: 91  61 245;
+  --red-rgb:   255  92 120;
 
-  --neon-hi: #8ff5bb;
-  --neon-deep: #1fb862;
-  --gold-hi: #f6dd9a;
-  --sauge: #2ee07a;
+  --neon-hi: #a996ff;
+  --neon-deep: #5b3df5;
+  --gold-hi: #e2d9ff;
+  --sauge: #34d399;
 }
 
 :root {

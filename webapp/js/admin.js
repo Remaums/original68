@@ -134,6 +134,9 @@ function bindHandlers() {
   $('stockSearch').addEventListener('input', renderStock);
   $('addCategory').addEventListener('click', () => addCategoryRow());
   $('saveCategories').addEventListener('click', saveCategoryList);
+  $('addFarm').addEventListener('click', () => $('farmRows').append(farmRow()));
+  $('saveFarms').addEventListener('click', enregistrerLesFarms);
+  $('farmLogoFichier').addEventListener('change', envoyerLeLogoDeFarm);
   $('saveSettings').addEventListener('click', saveGuards);
   $('savePromoBandeau').addEventListener('click', enregistrerLeBandeau);
   monterLEffacementParId();
@@ -236,6 +239,7 @@ async function refreshAll() {
   state.annonces = await api('/announcements').catch(() => []);
   state.products = catalog.products;
   state.categories = catalog.categories.filter((c) => c.id !== 'all');
+  state.farms = catalog.farms ?? [];
   state.orders = orders;
   state.stats = stats;
   state.bilan = bilan;
@@ -1823,6 +1827,8 @@ function openEditor(product) {
   $('fPoints').value = (product?.points ?? []).join('\n');
   $('fCategory').value = product?.category ?? state.categories[0]?.id ?? '';
   $('fBadge').value = product?.badge ?? '';
+  fillSelect($('fFarm'), [['', '— Aucune —'], ...(state.farms ?? []).map((f) => [f.id, f.label])]);
+  $('fFarm').value = product?.farm ?? '';
   $('fRemise').value = product?.remise ?? '';
   $('fTags').value = (product?.tags ?? []).join(', ');
   // Une photo déposée dans le dossier n'est pas dans la liste : on bascule
@@ -1887,6 +1893,8 @@ function collectForm() {
     points: $('fPoints').value.split('\n').map((l) => l.trim()).filter(Boolean),
     category: $('fCategory').value,
     badge: $('fBadge').value.trim() || undefined,
+    // Toujours envoyée : une chaîne vide détache le produit de sa farm.
+    farm: $('fFarm').value || '',
     // Toujours envoyée, même vide : c'est ce qui retire une promo. Omise,
     // l'ancienne survivrait à l'enregistrement.
     remise: Number($('fRemise').value) || 0,
@@ -3520,6 +3528,65 @@ async function toggleBlock(id, block, button) {
  */
 function renderCategories() {
   $('categoryRows').replaceChildren(...state.categories.map(categoryRow));
+  $('farmRows').replaceChildren(...(state.farms ?? []).map(farmRow));
+}
+
+/* ── Farms ───────────────────────────────────────────────── */
+
+function farmRow(farm = { id: '', label: '', logo: '' }) {
+  const row = document.createElement('div');
+  row.className = 'a-catrow a-farmrow';
+  row.dataset.id = farm.id;
+  row.innerHTML = `
+    <span class="a-farmrow__logo">${farm.logo ? `<img src="${escapeHtml(farm.logo)}" alt="">` : '🧑‍🌾'}</span>
+    <input class="a-farmrow__label" maxlength="40" value="${escapeHtml(farm.label ?? '')}" placeholder="Nom de la farm">
+    <button class="a-btn a-btn--sm a-btn--ghost a-farmrow__envoi" type="button"${farm.id ? '' : ' disabled title="Enregistre d\'abord la farm"'}>Logo</button>
+    <button class="a-variant__del" type="button" aria-label="Supprimer">✕</button>`;
+  row.querySelector('.a-farmrow__envoi').addEventListener('click', () => {
+    $('farmLogoFichier').dataset.farm = farm.id;
+    $('farmLogoFichier').click();
+  });
+  row.querySelector('.a-variant__del').addEventListener('click', () => {
+    const used = state.products.filter((p) => p.farm === farm.id).length;
+    if (farm.id && used && !confirm(`${used} produit(s) sont rattachés à cette farm. La retirer quand même ?`)) return;
+    row.remove();
+  });
+  return row;
+}
+
+async function enregistrerLesFarms() {
+  const farms = [...$('farmRows').children]
+    .map((row) => ({ id: row.dataset.id || undefined, label: row.querySelector('.a-farmrow__label').value.trim() }))
+    .filter((f) => f.label);
+  const button = $('saveFarms');
+  button.disabled = true;
+  try {
+    await api('/farms', { method: 'PUT', body: { farms } });
+    await refreshAll();
+    toast('Farms enregistrées');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function envoyerLeLogoDeFarm(event) {
+  const fichier = event.target.files?.[0];
+  const id = event.target.dataset.farm;
+  event.target.value = '';
+  if (!fichier || !id) return;
+  toast('Envoi du logo…');
+  try {
+    const nom = encodeURIComponent(fichier.name || 'logo');
+    await televerserVers(`/api/admin/farms/${encodeURIComponent(id)}/logo/upload?nom=${nom}`, fichier, () => {});
+    await refreshAll();
+    toast('Logo enregistré');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 function categoryRow(category = { id: '', label: '', emoji: '•' }) {

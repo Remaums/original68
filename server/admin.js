@@ -16,6 +16,7 @@ import {
   deleteProduct,
   setStock,
   saveCategories,
+  saveFarms, setFarmLogo, getFarm,
   restoreStock, duplicateProduct, reordonnerProduits,
 } from './catalog.js';
 import {
@@ -1006,6 +1007,27 @@ adminRouter.put(
 adminRouter.put(
   '/categories',
   route(async (req, res) => res.json(await saveCategories(req.body?.categories)))
+);
+
+/* ── Farms ───────────────────────────────────────────────── */
+
+adminRouter.put(
+  '/farms',
+  route(async (req, res) => res.json(await saveFarms(req.body?.farms)))
+);
+
+/** Le logo d'une farm : déposé chez Telegram comme une photo de produit. */
+adminRouter.post(
+  '/farms/:id/logo/upload',
+  route(async (req, res) => {
+    const farm = await getFarm(req.params.id);
+    if (!farm) throw new HttpError(404, 'Farm introuvable.');
+    const octets = recevoirFichier(req, 'photo');
+    const nom = nomDeFichier(req.query.nom, 'photo');
+    const depot = await remettreATelegram(req.telegramUser.id, 'photo', octets, nom,
+      `🧑‍🌾 ${farm.label} — nouveau logo.`);
+    res.json(await setFarmLogo(req.params.id, depot.fileId));
+  })
 );
 
 /* ── Commandes ───────────────────────────────────────────── */

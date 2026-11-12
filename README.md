@@ -30,6 +30,18 @@ Si le serveur ne répond pas au moment de commander, la boutique retombe sur
 l'ancien chemin : elle montre le récapitulatif du panier, à copier et à
 t'envoyer sur Snapchat.
 
+### Les farms
+
+Une farm, c'est un producteur : un nom et un logo. Dans l'espace admin,
+onglet **Catégories**, bloc **Farms** : ajoute-les, enregistre, puis envoie
+leur logo avec le bouton **Logo** (il part dans ta conversation avec le bot,
+comme les photos de produits). Sur chaque fiche produit, le menu **Farm**
+rattache le produit à la sienne.
+
+Elles apparaissent sur l'accueil (carrousel « Les farms », qui filtre les
+références) et dans l'onglet **Farms**, où chaque farm a sa page avec ses
+produits. Le chiffre « Farms » du haut de page les compte tout seul.
+
 ### Retrait, livraison, zones, créneaux, remises
 
 Tout se règle dans l'espace admin, comme sur Napoli : **Retrait et

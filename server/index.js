@@ -17,6 +17,7 @@ import { langueDe, choisirLaLangue } from './langue.js';
 import {
   HttpError,
   getCatalog,
+  getFarm,
   getProduct,
   priceOf,
   reserveStock,
@@ -262,7 +263,7 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/catalog', async (req, res, next) => {
   try {
-    const { products: bruts, categories } = await getCatalog();
+    const { products: bruts, categories, farms } = await getCatalog();
     const products = bruts.map(produitPublic);
     // `statuses` sert à l'écran « Mes commandes » de la Mini App : les
     // libellés et emojis de statut vivent côté serveur, une seule fois.
@@ -276,6 +277,8 @@ app.get('/api/catalog', async (req, res, next) => {
       shop: publicConfig,
       categories,
       products,
+      // Les farms, sans la référence Telegram de leur logo.
+      farms: farms.map(({ logoFileId: _logo, ...farm }) => farm),
       statuses: STATUSES,
       gates: {
         age: settings.features.ageGate,
@@ -1200,6 +1203,19 @@ app.get('/api/musique/:id', async (req, res, next) => {
     if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
     console.error('Morceau indisponible :', err.message);
     if (!res.headersSent) res.status(502).json({ error: 'Morceau indisponible.' });
+    else next(err);
+  }
+});
+
+app.get('/api/farm-logo/:id', async (req, res, next) => {
+  try {
+    const farm = await getFarm(req.params.id);
+    if (!farm?.logoFileId) return res.status(404).json({ error: 'Pas de logo pour cette farm.' });
+    await servirMedia(req, res, { fileId: farm.logoFileId, kind: 'photo' });
+  } catch (err) {
+    if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
+    console.error('Logo de farm indisponible :', err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Logo indisponible.' });
     else next(err);
   }
 });

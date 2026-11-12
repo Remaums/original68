@@ -24,7 +24,7 @@ const store = createStore('catalog.json', () => {
 export async function getCatalog({ includeHidden = false } = {}) {
   const data = await store.read();
   const products = includeHidden ? data.products : data.products.filter((p) => p.visible !== false);
-  return { products, categories: data.categories };
+  return { products, categories: data.categories, farms: data.farms ?? [] };
 }
 
 export async function getProduct(id, { includeHidden = true } = {}) {
@@ -394,7 +394,7 @@ export async function restoreStock(lines) {
  * normalisation, si bien qu'un fichier trafiqué ne peut pas glisser un prix
  * négatif ou un champ inattendu dans la boutique.
  */
-export async function replaceCatalog({ products, categories }) {
+export async function replaceCatalog({ products, categories, farms }) {
   if (!Array.isArray(products)) throw new HttpError(400, 'Catalogue invalide.');
 
   const propres = products.map((p) => normalizeProduct(p));
@@ -413,6 +413,7 @@ export async function replaceCatalog({ products, categories }) {
         emoji: emojiDe(c.emoji),
       }));
     }
+    if (Array.isArray(farms)) data.farms = farms.map((f) => normalizeFarm(f)).filter(Boolean);
     return { products: data.products.length, categories: data.categories.length };
   });
 }
@@ -452,6 +453,70 @@ export async function saveCategories(categories) {
     data.categories = propres;
     return data.categories;
   });
+}
+
+/* ── Écriture : les farms ────────────────────────────────── */
+
+/**
+ * Une farm : un producteur, avec son nom et son logo.
+ *
+ * Le logo envoyé par l'admin part chez Telegram, comme les photos de
+ * produits : on garde sa référence (`logoFileId`, qui ne sort jamais du
+ * serveur) et l'adresse par laquelle la boutique le demande (`logo`). Un
+ * logo peut aussi être une simple adresse, collée à la main.
+ */
+function normalizeFarm(f, avant = null) {
+  const label = String(f?.label ?? '').trim().slice(0, 40);
+  const id = slug(f?.id ?? label);
+  if (!id || !label) return null;
+  const adresse = String(f?.logo ?? '').trim().slice(0, 300);
+  const logoFileId = f?.logoFileId ?? avant?.logoFileId;
+  return {
+    id,
+    label,
+    logo: adresse || avant?.logo || undefined,
+    logoFileId: logoFileId ? String(logoFileId).slice(0, 200) : undefined,
+  };
+}
+
+/**
+ * Remplace la liste des farms. Une farm qui garde son identifiant garde son
+ * logo : l'écran d'admin n'a pas à renvoyer ce qu'il n'a pas touché. La liste
+ * peut être vide — une boutique peut se passer de farms.
+ */
+export async function saveFarms(farms) {
+  if (!Array.isArray(farms)) throw new HttpError(400, 'Liste de farms invalide.');
+  if (farms.length > 60) throw new HttpError(400, 'Pas plus de 60 farms.');
+  return store.update((data) => {
+    const avant = new Map((data.farms ?? []).map((f) => [f.id, f]));
+    const vus = new Set();
+    const propres = [];
+    for (const brute of farms) {
+      const id = slug(brute?.id ?? brute?.label ?? '');
+      const farm = normalizeFarm(brute, avant.get(id));
+      if (!farm || vus.has(farm.id)) continue;
+      vus.add(farm.id);
+      propres.push(farm);
+    }
+    data.farms = propres;
+    return data.farms;
+  });
+}
+
+/** Rattache un logo envoyé à Telegram à une farm. */
+export async function setFarmLogo(id, fileId) {
+  return store.update((data) => {
+    const farm = (data.farms ?? []).find((f) => f.id === id);
+    if (!farm) throw new HttpError(404, 'Farm introuvable.');
+    farm.logoFileId = fileId;
+    farm.logo = `/api/farm-logo/${id}?v=${Date.now().toString(36)}`;
+    return farm;
+  });
+}
+
+export async function getFarm(id) {
+  const data = await store.read();
+  return (data.farms ?? []).find((f) => f.id === id) ?? null;
 }
 
 /* ── Validation ──────────────────────────────────────────── */
@@ -530,6 +595,8 @@ function normalizeProduct(input) {
     // le vendeur les a mises. La première photo sert aussi de vignette.
     media: normalizeMedia(input.media, variants),
     badge: input.badge ? String(input.badge).slice(0, 20) : undefined,
+    // La farm qui produit ce qu'on vend : son identifiant, ou rien.
+    farm: input.farm ? slug(input.farm) || undefined : undefined,
     // La promo, en pourcentage entier, appliquée à tous les formats. Les
     // prix enregistrés restent les prix pleins : c'est la boutique qui
     // affiche l'ancien barré et le nouveau, et retirer la promo ne demande

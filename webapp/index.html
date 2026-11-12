@@ -28,8 +28,9 @@
 <!-- ══ Ouverture : le temps que le catalogue arrive ══ -->
 <div class="charge" id="charge">
   <div class="charge__tete">
-    <p class="devise">Une vraie connexion, pour être branché à vie</p>
     <img class="logo-rond" src="/assets/ui/logo.png" alt="" width="132" height="132">
+    <p class="o68-nom" aria-hidden="true">ORIGINAL<span>68</span></p>
+    <p class="o68-devise" data-t="o68.devise">La sélection · Les farms · Les références</p>
   </div>
   <div class="charge__texte-zone">
     <!-- Le journal : chaque étape passée reste écrite, cochée, au-dessus
@@ -60,15 +61,11 @@
 <div class="bienvenue" id="bienvenue" hidden role="dialog" aria-modal="true"
      aria-labelledby="bienvenueEnseigne">
   <div class="bienvenue__carte">
-    <h2 class="bienvenue__enseigne" id="bienvenueEnseigne">Original68</h2>
-    <p class="devise">Une vraie connexion, pour être branché à vie</p>
-    <img class="bienvenue__logo logo-rond" src="/assets/ui/logo.png" alt="" width="104" height="104">
-    <!-- Le barman accueille : son nom en tête du panneau, son portrait
-         dessous, comme sur la maquette de la maison. -->
-    <p class="bienvenue__barman-nom">Le Barman :</p>
+    <img class="bienvenue__logo logo-rond" src="/assets/ui/logo.png" alt="" width="120" height="120">
+    <h2 class="bienvenue__enseigne o68-nom" id="bienvenueEnseigne">ORIGINAL<span>68</span></h2>
+    <p class="o68-devise" data-t="o68.devise">La sélection · Les farms · Les références</p>
     <p class="bienvenue__salut" id="bienvenueSalut"></p>
     <p class="bienvenue__texte" id="bienvenueTexte"></p>
-    <img class="bienvenue__barman" src="/assets/ui/barman.jpg" alt="" width="357" height="359" decoding="async">
 
     <!-- Les deux informations qu'on vient chercher : quand, et comment.
          En pastilles plutôt qu'au bout de la phrase, où elles se lisaient
@@ -240,18 +237,6 @@
       <span aria-hidden="true">🛒</span><span class="rond__compte" id="panierCompte" hidden></span>
     </button>
   </div>
-  <!-- La recherche, toujours ouverte, sur toute la largeur. -->
-  <div class="find" id="findBar">
-    <div class="find__box">
-      <span class="find__icon" aria-hidden="true">🔎</span>
-      <input id="findInput" type="search" autocomplete="off" placeholder="Rechercher un produit…" data-t-placeholder="catalogue.rechercher"
-             aria-label="Chercher un produit" data-t-aria="catalogue.rechercher">
-      <button class="find__clear" id="findClear" type="button" aria-label="Effacer la recherche" data-t-aria="aria.effacer" hidden>✕</button>
-    </div>
-    <select id="findSort" hidden aria-hidden="true" tabindex="-1">
-      <option value="default">default</option>
-    </select>
-  </div>
 </header>
 
 <p class="closed" id="closedBanner" hidden></p>
@@ -272,13 +257,34 @@
        « Bienvenue », les rayons en tuiles, et le bandeau promo. Les
        tuiles sont les catégories de la boutique ; « Promos » s'y ajoute
        seule dès qu'un produit est en promo. -->
-  <section class="vitrine">
-    <h2 class="vitrine__titre" data-t="vitrine.bienvenue">Bienvenue</h2>
-    <nav class="tuiles" id="cats" aria-label="Catégories" data-t-aria="onglet.categories"></nav>
+  <!-- ══ Le haut de la page, comme l'appli Original68 ══ -->
+  <section class="o68-hero">
+    <p class="o68-badge"><span class="o68-badge__point" aria-hidden="true"></span><span data-t="o68.badge">Sélection par farms</span> · ORIGINAL68</p>
+    <img class="o68-logo logo-rond" src="/assets/ui/logo.png" alt="" width="136" height="136">
+    <h1 class="o68-nom">ORIGINAL<span>68</span></h1>
+    <p class="o68-devise" data-t="o68.devise">La sélection · Les farms · Les références</p>
+    <div class="o68-chiffres">
+      <div class="o68-chiffre"><b id="chiffreRefs">–</b><span data-t="o68.references">Références</span></div>
+      <div class="o68-chiffre"><b id="chiffreFarms">–</b><span data-t="o68.farms">Farms</span></div>
+      <div class="o68-chiffre"><b>68</b><span data-t="o68.original">Original</span></div>
+    </div>
+  </section>
+
+  <section class="o68-section">
+    <h2 class="o68-titre" data-t="o68.explore">Explore le catalogue</h2>
+    <nav class="pastilles" id="cats" aria-label="Catégories" data-t-aria="onglet.categories"></nav>
     <div class="promo" id="promoBandeau" hidden>
       <p class="promo__titre" id="promoTitre"></p>
       <button class="promo__btn" id="promoVoir" type="button"><span data-t="promo.voir">Voir les offres</span> →</button>
     </div>
+  </section>
+
+  <section class="o68-section" id="farmsSection" hidden>
+    <div class="o68-titre-ligne">
+      <h2 class="o68-titre" data-t="o68.lesFarms">Les farms</h2>
+      <span class="o68-compte" id="farmsCompte"></span>
+    </div>
+    <div class="farms-piste" id="farmsPiste"></div>
   </section>
 
   <!-- ══ « Comment c'était ? » ══ ══════════════════════════════
@@ -294,9 +300,21 @@
     <span class="reprise__fleche" aria-hidden="true">›</span>
   </button>
 
-  <div class="rayon-tete">
-    <h2 class="rayon-tete__titre" id="gridTitre" data-t="vitrine.tous">Tous les produits</h2>
-    <span class="rayon-tete__compte" id="gridCompte"></span>
+  <div class="o68-titre-ligne rayon-tete">
+    <h2 class="o68-titre" id="gridTitre" data-t="vitrine.tous">Tous les produits</h2>
+    <span class="o68-compte" id="gridCompte"></span>
+  </div>
+  <!-- La recherche, toujours ouverte, sur toute la largeur. -->
+  <div class="find" id="findBar">
+    <div class="find__box">
+      <span class="find__icon" aria-hidden="true">🔎</span>
+      <input id="findInput" type="search" autocomplete="off" placeholder="Rechercher un produit…" data-t-placeholder="catalogue.rechercher"
+             aria-label="Chercher un produit" data-t-aria="catalogue.rechercher">
+      <button class="find__clear" id="findClear" type="button" aria-label="Effacer la recherche" data-t-aria="aria.effacer" hidden>✕</button>
+    </div>
+    <select id="findSort" hidden aria-hidden="true" tabindex="-1">
+      <option value="default">default</option>
+    </select>
   </div>
 
   <!-- ══ Grille produits ══ -->
@@ -405,6 +423,29 @@
   </div>
 </section>
 
+<!-- ══ Vue « Farms » ══
+     Toutes les farms en cartes ; une farm touchée montre sa page : son
+     logo, son nom et ses références. -->
+<section class="vue" id="vueFarms" role="tabpanel" aria-label="Farms" data-t-aria="onglet.farms" hidden>
+  <div id="farmsListe">
+    <div class="o68-titre-ligne">
+      <h2 class="o68-titre" data-t="o68.lesFarms">Les farms</h2>
+      <span class="o68-compte" id="farmsCompteVue"></span>
+    </div>
+    <div class="farms-grille" id="farmsGrille"></div>
+    <p class="empty" id="farmsVide" hidden data-t="o68.aucuneFarm">Les farms arrivent bientôt.</p>
+  </div>
+  <div class="farm-page" id="farmPage" hidden>
+    <button class="pretour" id="farmRetour" type="button"><span aria-hidden="true">‹</span> <span data-t="o68.toutesLesFarms">Toutes les farms</span></button>
+    <div class="farm-page__tete">
+      <span class="farm-logo farm-logo--grand" id="farmPageLogo" aria-hidden="true"></span>
+      <h2 class="farm-page__nom" id="farmPageNom"></h2>
+      <p class="o68-compte" id="farmPageCompte"></p>
+    </div>
+    <section class="grid" id="farmPageGrille"></section>
+  </div>
+</section>
+
 <!-- ══ Vue « Favoris » ══ -->
 <section class="vue" id="vueFavoris" role="tabpanel" aria-label="Favoris" data-t-aria="onglet.favoris" hidden>
   <h2 class="vue__titre" data-t="favoris.titre">Mes favoris</h2>
@@ -489,6 +530,8 @@
         <p class="profil__qui" id="profilQui"></p>
       </div>
     </div>
+
+    <div class="infos" id="infosBoutique"></div>
 
     <div class="chiffres" id="profilChiffres"></div>
 
@@ -675,23 +718,23 @@
     <span class="tabbar__emoji" aria-hidden="true">🏠</span>
     <span data-t="onglet.accueil">Accueil</span>
   </button>
-  <button class="tabbar__item" type="button" role="tab" data-onglet="categories" aria-selected="false">
-    <span class="tabbar__emoji" aria-hidden="true">🛍️</span>
-    <span data-t="onglet.boutique">Boutique</span>
-  </button>
-  <button class="tabbar__item" type="button" role="tab" data-onglet="favoris" aria-selected="false">
-    <span class="tabbar__emoji" aria-hidden="true">💚</span>
-    <span data-t="onglet.favoris">Favoris</span>
-    <span class="tabbar__pastille" id="favorisPastille" hidden></span>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="farms" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">🧑‍🌾</span>
+    <span data-t="onglet.farms">Farms</span>
   </button>
   <button class="tabbar__item" type="button" role="tab" data-onglet="panier" aria-selected="false">
-    <span class="tabbar__emoji" aria-hidden="true">🛒</span>
+    <span class="tabbar__emoji" aria-hidden="true">🧺</span>
     <span data-t="onglet.panier">Panier</span>
     <span class="tabbar__pastille" id="panierPastille" hidden></span>
   </button>
   <button class="tabbar__item" type="button" role="tab" data-onglet="profil" aria-selected="false">
-    <span class="tabbar__emoji" aria-hidden="true">👤</span>
-    <span data-t="onglet.compte">Compte</span>
+    <span class="tabbar__emoji" aria-hidden="true">ℹ️</span>
+    <span data-t="onglet.infos">Infos</span>
+    <span class="tabbar__pastille" id="favorisPastille" hidden></span>
+  </button>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="contact" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">📥</span>
+    <span data-t="onglet.contact">Contact</span>
   </button>
 </nav>
 

@@ -21,7 +21,7 @@ const VERSION = 1;
 /* ── Sauvegarde ──────────────────────────────────────────── */
 
 export async function buildBackup() {
-  const [{ products, categories }, orders, settings, promos] = await Promise.all([
+  const [{ products, categories, farms }, orders, settings, promos] = await Promise.all([
     getCatalog({ includeHidden: true }),
     listOrders({ limit: 100000 }),
     getSettings(),
@@ -32,7 +32,7 @@ export async function buildBackup() {
     version: VERSION,
     exportedAt: new Date().toISOString(),
     counts: { products: products.length, orders: orders.length, promos: promos.length },
-    catalog: { products, categories },
+    catalog: { products, categories, farms },
     // Les commandes arrivent de la plus récente à la plus ancienne : on les
     // remet dans l'ordre d'origine pour qu'une restauration les replace comme
     // elles étaient.

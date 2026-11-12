@@ -42,6 +42,8 @@ const state = {
   prenom: '',         // son prénom Telegram, pour lui montrer ce qu'il signerait
   favoris: new Set(), // les produits qu'il garde de côté
   coeurs: {},         // combien de clients ont mis chaque produit en favori
+  farms: [],          // les producteurs : { id, label, logo }
+  farm: null,         // la farm choisie sur l'accueil, ou toutes
   panier: [],         // { id, variantId, qte } — dans le téléphone, nulle part ailleurs
   promoBandeau: { actif: true, titre: '' },
   preferences: {},    // ce qu'il accepte de recevoir
@@ -365,6 +367,7 @@ async function init() {
     state.features = data.features ?? {};
     state.notes = data.notes ?? {};
     state.coeurs = data.coeurs ?? {};
+    state.farms = data.farms ?? [];
     state.tiers = data.discounts?.tiers ?? [];
     state.zones = data.zones ?? [];
     state.slotsEnabled = Boolean(data.slots?.enabled);
@@ -1012,6 +1015,7 @@ function bindStaticHandlers() {
     $('gridTitre').scrollIntoView({ behavior: anime() ? 'smooth' : 'auto', block: 'start' });
   });
   $('profilContact').addEventListener('click', () => montrerLOnglet('contact'));
+  $('farmRetour').addEventListener('click', () => { renderLesFarms(); haptic('light'); });
   $('sonBtn').addEventListener('click', basculerLeJuke);
   $('notifyMe').addEventListener('click', joinWaitlist);
 
@@ -1034,12 +1038,13 @@ function applyFeatures() {
     state.features.announcements === false;
   const ongletProfil = $('tabbar').querySelector('[data-onglet="profil"]');
   ongletProfil.hidden = profilVide;
+  // Les favoris n'ont plus d'onglet : ils vivent dans Infos.
   const ongletFavoris = $('tabbar').querySelector('[data-onglet="favoris"]');
-  ongletFavoris.hidden = state.features.favoris === false;
+  if (ongletFavoris) ongletFavoris.hidden = state.features.favoris === false;
   const visibles = [...$('tabbar').querySelectorAll('.tabbar__item')].filter((b) => !b.hidden).length;
   $('tabbar').style.gridTemplateColumns = `repeat(${visibles}, 1fr)`;
   if (profilVide && state.onglet === 'profil') montrerLOnglet('catalogue');
-  if (ongletFavoris.hidden && state.onglet === 'favoris') montrerLOnglet('catalogue');
+  if (ongletFavoris?.hidden && state.onglet === 'favoris') montrerLOnglet('catalogue');
   // La recherche vit derrière la loupe de l'entête. Le réglage de la
   // boutique masque le bouton ; la rangée, elle, reste repliée tant qu'on
   // n'a pas appuyé dessus — et se replie si le vendeur coupe la fonction
@@ -1273,6 +1278,7 @@ function mesurerLaBarre() {
 const ONGLETS = {
   catalogue: 'vueCatalogue',
   categories: 'vueCategories',
+  farms: 'vueFarms',
   favoris: 'vueFavoris',
   panier: 'vuePanier',
   profil: 'vueProfil',
@@ -1337,9 +1343,10 @@ function montrerLOnglet(nom) {
   if (nom === 'produit') requestAnimationFrame(mesurerLaBarre);
   if (nom === 'categories') renderRayons();
   if (nom === 'favoris') ouvrirLesFavoris();
+  if (nom === 'farms') renderLesFarms();
   if (nom === 'panier') renderPanier();
   if (nom === 'contact') renderContact();
-  if (nom === 'profil') ouvrirProfil();
+  if (nom === 'profil') { renderContact(); ouvrirProfil(); }
 
   if (change) window.scrollTo({ top: 0, behavior: 'auto' });
 }
@@ -1452,8 +1459,7 @@ function renderContact() {
   if (state.fulfillment?.delivery) lignes.push(['🛵', t('contact.livraison'), t('contact.livraisonDetail')]);
   lignes.push(['💶', t('contact.especes'), t('contact.especesDetail')]);
 
-  $('contactInfos').replaceChildren(
-    ...lignes.map(([emoji, titre, detail]) => {
+  const peindre = () => lignes.map(([emoji, titre, detail]) => {
       const ligne = document.createElement('div');
       ligne.className = 'contact__info';
       const icone = document.createElement('span');
@@ -1465,8 +1471,10 @@ function renderContact() {
       texte.append(fort, document.createTextNode(` — ${detail}`));
       ligne.append(icone, texte);
       return ligne;
-    })
-  );
+    });
+  $('contactInfos').replaceChildren(...peindre());
+  // Infos les montre aussi, en tête : c'est ce qu'on vient y chercher.
+  $('infosBoutique')?.replaceChildren(...peindre());
 }
 
 /* ── La porte du bot ─────────────────────────────────────── */
@@ -2001,36 +2009,112 @@ function gateAge() {
 /* ── Rendu ───────────────────────────────────────────────── */
 
 /**
- * Les rayons, en tuiles : une grande icône et le nom. « Tout » n'a pas de
- * tuile — la grille montre tout tant qu'aucune n'est choisie, et toucher
- * la tuile choisie la relâche. « Promos » s'ajoute d'elle-même dès qu'un
- * produit est en promo.
+ * « Explore le catalogue » : les rayons en pastilles. « ✦ Tout » en tête,
+ * puis chaque catégorie, puis « Promos » dès qu'un produit est en promo.
+ * Le haut de page porte aussi les deux chiffres et les farms : ils se
+ * peignent ici, avec le reste de la vitrine.
  */
 function renderCategories() {
   const nav = $('cats');
-  const tuiles = state.categories.filter((cat) => cat.id !== 'all');
-  if (plusFortePromo(state.products) > 0) {
-    tuiles.push({ id: 'promos', label: t('vitrine.promos'), emoji: '🔥' });
-  }
+  const pastilles = [
+    { id: 'all', label: t('o68.tout'), signe: '✦' },
+    ...state.categories.filter((cat) => cat.id !== 'all').map((cat) => ({ ...cat, signe: '◆' })),
+  ];
+  if (plusFortePromo(state.products) > 0) pastilles.push({ id: 'promos', label: t('vitrine.promos'), signe: '🔥' });
   nav.replaceChildren(
-    ...tuiles.map((cat) => {
+    ...pastilles.map((cat) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'tuile';
+      btn.className = 'pastille';
       btn.setAttribute('aria-pressed', String(cat.id === state.category));
-      const icone = document.createElement('span');
-      icone.className = 'tuile__icone';
-      icone.setAttribute('aria-hidden', 'true');
-      icone.textContent = cat.emoji ?? '';
-      const nom = document.createElement('span');
-      nom.className = 'tuile__nom';
-      nom.textContent = cat.label;
-      btn.append(icone, nom);
-      btn.addEventListener('click', () => choisirLeRayon(cat.id === state.category ? 'all' : cat.id));
+      btn.textContent = `${cat.signe} ${cat.label}`;
+      btn.addEventListener('click', () => choisirLeRayon(cat.id));
       return btn;
     })
   );
+  $('chiffreRefs').textContent = String(state.products.length);
+  $('chiffreFarms').textContent = String(state.farms.length);
+  renderLePisteDesFarms();
   renderPromo();
+}
+
+const farmDe = (id) => (id ? state.farms.find((f) => f.id === id) ?? null : null);
+const produitsDeLaFarm = (id) => state.products.filter((p) => p.farm === id);
+
+/** Le logo rond d'une farm, ou ses initiales quand elle n'en a pas. */
+function logoDeFarm(farm, classe = 'farm-logo') {
+  const rond = document.createElement('span');
+  rond.className = classe;
+  rond.setAttribute('aria-hidden', 'true');
+  if (farm?.logo) {
+    const img = document.createElement('img');
+    img.src = farm.logo;
+    img.alt = '';
+    img.loading = 'lazy';
+    rond.append(img);
+  } else {
+    rond.textContent = farm
+      ? farm.label.split(/\s+/).map((m) => m[0]).join('').slice(0, 2).toUpperCase()
+      : '✦';
+  }
+  return rond;
+}
+
+function carteDeFarm(farm, { choisie = false, auClic }) {
+  const carte = document.createElement('button');
+  carte.type = 'button';
+  carte.className = 'farm-carte';
+  carte.setAttribute('aria-pressed', String(choisie));
+  carte.append(logoDeFarm(farm));
+  const nom = document.createElement('span');
+  nom.className = 'farm-carte__nom';
+  nom.textContent = farm ? farm.label : t('o68.toutesLesFarms');
+  const compte = document.createElement('span');
+  compte.className = 'farm-carte__compte';
+  const n = farm ? produitsDeLaFarm(farm.id).length : state.products.length;
+  compte.textContent = n === 1 ? t('vitrine.unArticle') : t('vitrine.articles', { n });
+  carte.append(nom, compte);
+  carte.addEventListener('click', auClic);
+  return carte;
+}
+
+/** Le carrousel de l'accueil : « Toutes », puis chaque farm. */
+function renderLePisteDesFarms() {
+  const section = $('farmsSection');
+  section.hidden = state.farms.length === 0;
+  if (section.hidden) return;
+  $('farmsCompte').textContent = t('o68.nFarms', { n: state.farms.length });
+  const choisir = (id) => () => {
+    state.farm = id;
+    haptic('light');
+    renderCategories();
+    renderGrid();
+    $('gridTitre').scrollIntoView({ behavior: anime() ? 'smooth' : 'auto', block: 'start' });
+  };
+  $('farmsPiste').replaceChildren(
+    carteDeFarm(null, { choisie: !state.farm, auClic: choisir(null) }),
+    ...state.farms.map((farm) => carteDeFarm(farm, { choisie: state.farm === farm.id, auClic: choisir(farm.id) }))
+  );
+}
+
+/** L'onglet Farms : toutes les farms, puis la page de celle qu'on touche. */
+function renderLesFarms(id = null) {
+  const farm = farmDe(id);
+  $('farmsListe').hidden = Boolean(farm);
+  $('farmPage').hidden = !farm;
+  if (!farm) {
+    $('farmsCompteVue').textContent = t('o68.nFarms', { n: state.farms.length });
+    $('farmsVide').hidden = state.farms.length > 0;
+    $('farmsGrille').replaceChildren(
+      ...state.farms.map((f) => carteDeFarm(f, { auClic: () => { haptic('light'); renderLesFarms(f.id); window.scrollTo(0, 0); } }))
+    );
+    return;
+  }
+  const produits = produitsDeLaFarm(farm.id);
+  $('farmPageLogo').replaceWith(Object.assign(logoDeFarm(farm, 'farm-logo farm-logo--grand'), { id: 'farmPageLogo' }));
+  $('farmPageNom').textContent = farm.label;
+  $('farmPageCompte').textContent = produits.length === 1 ? t('vitrine.unArticle') : t('vitrine.articles', { n: produits.length });
+  $('farmPageGrille').replaceChildren(...produits.map(productCard));
 }
 
 function choisirLeRayon(id) {
@@ -2060,6 +2144,7 @@ function renderGrid() {
     state.products
       .filter((p) => state.category === 'all'
         || (state.category === 'promos' ? Number(p.remise) > 0 : p.category === state.category))
+      .filter((p) => !state.farm || p.farm === state.farm)
       .filter((p) => !cherche || correspond(p, state.query))
   );
 
@@ -2077,9 +2162,11 @@ function renderGrid() {
 
   // Le titre de la grille dit ce qu'elle montre, et combien.
   const rayon = state.categories.find((c) => c.id === state.category);
-  $('gridTitre').textContent = state.category === 'all' || !rayon
-    ? (state.category === 'promos' ? t('vitrine.promos') : t('vitrine.tous'))
-    : rayon.label;
+  const farm = farmDe(state.farm);
+  $('gridTitre').textContent = [
+    farm?.label,
+    state.category === 'promos' ? t('vitrine.promos') : state.category !== 'all' ? rayon?.label : null,
+  ].filter(Boolean).join(' · ') || t('vitrine.tous');
   $('gridCompte').textContent = list.length === 1 ? t('vitrine.unArticle') : t('vitrine.articles', { n: list.length });
 
   const cartes = list.map(productCard);
@@ -2347,7 +2434,8 @@ function productCard(product) {
          <span class="card__film" aria-hidden="true">▶</span>`
       : `<img src="${escapeHtml(photo ?? product.image)}" alt="" loading="lazy">`;
 
-  const rayon = state.categories.find((c) => c.id === product.category);
+  // Au-dessus du nom : la farm, sinon le rayon.
+  const rayon = farmDe(product.farm) ?? state.categories.find((c) => c.id === product.category);
   const appel = prixDAppel(product);
   const prix = `${appel.plusieurs ? `<small>${escapeHtml(t('carte.des'))}</small> ` : ''}${escapeHtml(formatPrice(appel.prix))}`;
   const avant = appel.avant ? `<s class="card__avant">${escapeHtml(formatPrice(appel.avant))}</s>` : '';
@@ -4359,6 +4447,7 @@ function libelleDuRetour() {
   return {
     catalogue: t('retour.catalogue'),
     categories: t('retour.categories'),
+    farms: t('retour.simple'),
     favoris: t('retour.simple'),
     panier: t('retour.simple'),
     contact: t('retour.simple'),

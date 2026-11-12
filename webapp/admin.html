@@ -168,6 +168,18 @@
     <div id="categoryRows"></div>
     <button class="a-btn a-btn--ghost a-btn--block" id="addCategory" type="button">+ Ajouter une catégorie</button>
     <button class="a-btn a-btn--primary a-btn--block" id="saveCategories" type="button">Enregistrer les catégories</button>
+
+    <h2 class="a-h2">Farms</h2>
+    <p class="a-hint">
+      Les producteurs, avec leur logo : ils s'affichent en carrousel sur
+      l'accueil et dans l'onglet Farms, et chaque produit se rattache à sa
+      farm depuis sa fiche. Une farm nouvelle s'enregistre d'abord ; son
+      bouton « Logo » s'ouvre ensuite.
+    </p>
+    <div id="farmRows"></div>
+    <input type="file" id="farmLogoFichier" accept="image/*" hidden>
+    <button class="a-btn a-btn--ghost a-btn--block" id="addFarm" type="button">+ Ajouter une farm</button>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveFarms" type="button">Enregistrer les farms</button>
   </section>
 
   <!-- ══ Réglages ══ -->
@@ -599,6 +611,7 @@
         <label class="a-field"><span>Catégorie</span><select id="fCategory"></select></label>
         <label class="a-field"><span>Pastille</span><input id="fBadge" maxlength="20" placeholder="NOUVEAU"></label>
       </div>
+      <label class="a-field"><span>Farm</span><select id="fFarm"></select></label>
       <!-- La promo s'applique à tous les formats : les prix restent les prix
            pleins, la boutique barre l'ancien et affiche « -X % ». -->
       <label class="a-field"><span>Promo (%) — vide ou 0 : pas de promo</span>

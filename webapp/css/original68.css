@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════
-   Original68 — l'habillage, d'après la maquette.
+   Original68 — l'habillage, d'après l'appli de la maison.
 
    Chargée après style.css, et seulement des surcharges : la mise en page
    reste celle de Tanja, ce fichier lui change d'habit. La palette, elle,
@@ -161,7 +161,7 @@ body { background-image: none; background-color: var(--night); }
 /* ── Les boutons verts ───────────────────────────────────── */
 .btn--primary {
   color: var(--ink);
-  background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  background: linear-gradient(180deg, #9d85ff, var(--neon) 55%, var(--neon-deep));
   border-color: rgb(255 255 255 / .25);
   border-radius: 16px;
   font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
@@ -369,7 +369,7 @@ body { background-image: none; background-color: var(--night); }
   flex: none; width: 46px; height: 38px; padding: 0;
   display: grid; place-items: center; line-height: 1; color: var(--ink);
   border: 0; border-radius: 12px;
-  background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  background: linear-gradient(180deg, #9d85ff, var(--neon) 55%, var(--neon-deep));
   box-shadow: 0 0 16px rgb(var(--neon-rgb) / .35);
 }
 .card__ajout svg { width: 21px; height: 21px; }
@@ -481,7 +481,7 @@ body { background-image: none; background-color: var(--night); }
   background: rgb(var(--void-rgb) / .55); border-color: rgb(var(--neon-rgb) / .3);
 }
 .modes { display: flex; gap: 8px; }
-.mode[aria-pressed="true"] { background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep)); }
+.mode[aria-pressed="true"] { background: linear-gradient(180deg, #9d85ff, var(--neon) 55%, var(--neon-deep)); }
 .champs-deux { display: grid; grid-template-columns: 2fr 3fr; gap: 7px; }
 .code { display: flex; gap: 8px; }
 .code input { flex: 1; text-transform: uppercase; letter-spacing: .08em; }
@@ -504,7 +504,7 @@ body { background-image: none; background-color: var(--night); }
 .done__seal {
   width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%;
   display: grid; place-items: center; font-size: 32px; font-weight: 800;
-  color: var(--ink); background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  color: var(--ink); background: linear-gradient(180deg, #9d85ff, var(--neon) 55%, var(--neon-deep));
   box-shadow: 0 0 26px rgb(var(--neon-rgb) / .45);
 }
 .done__title { margin: 0; font-size: 24px; }
@@ -519,3 +519,187 @@ body { background-image: none; background-color: var(--night); }
   background: rgb(var(--void-rgb) / .5); border: 1px solid rgb(var(--neon-rgb) / .25);
 }
 .done__especes { margin: 12px 0 0; font-size: 13.5px; font-weight: 700; color: var(--cream); }
+
+/* ══════════════════════════════════════════════════════════════
+   Original68 : l'accueil de l'appli de la maison
+   ══════════════════════════════════════════════════════════════ */
+
+/* L'en-tête de La Grosse Frappe n'existe pas ici : l'accueil commence par
+   le logo. Le panier vit dans la barre du bas. */
+.topbar { display: none; }
+
+/* Les boutons pleins : violet électrique, texte blanc. */
+.btn--primary, .card__ajout, .mode[aria-pressed="true"] {
+  color: #fff;
+  background: linear-gradient(180deg, #9d85ff, var(--neon) 55%, var(--neon-deep));
+}
+.mode[aria-pressed="true"] small { color: rgb(255 255 255 / .8); }
+.card__ajout { color: #fff; }
+
+/* Le fond : le logo, très assombri. */
+.fond {
+  background:
+    linear-gradient(180deg, rgb(var(--night-rgb) / .78) 0%, rgb(var(--night-rgb) / .9) 40%, rgb(var(--night-rgb) / .97) 100%),
+    url('/assets/ui/fond.jpg') center top / cover no-repeat;
+}
+
+/* ── Le haut : badge, logo, nom, devise, trois chiffres ──── */
+.o68-hero {
+  display: grid; justify-items: center; text-align: center;
+  padding: 18px 0 20px;
+  border-bottom: 1px solid rgb(var(--neon-rgb) / .25);
+}
+.o68-badge {
+  margin: 0 0 16px; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: rgb(var(--cream-rgb) / .78);
+}
+.o68-badge__point {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--neon); box-shadow: 0 0 10px rgb(var(--neon-rgb) / .9);
+}
+.logo-rond {
+  border-color: rgb(var(--neon-rgb) / .75);
+  box-shadow: 0 0 0 4px rgb(var(--neon-rgb) / .15), 0 0 30px rgb(var(--neon-rgb) / .45);
+}
+.o68-logo { width: 132px; height: 132px; }
+.o68-nom {
+  margin: 14px 0 0;
+  font-family: var(--display); font-weight: 800; font-size: clamp(38px, 12vw, 50px);
+  line-height: 1; letter-spacing: .01em; text-transform: uppercase;
+  color: #fff; text-shadow: 0 2px 18px rgb(var(--neon-rgb) / .35);
+}
+.o68-nom span {
+  background: linear-gradient(90deg, #8b7bff, #c084fc);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.o68-devise {
+  margin: 8px 0 0;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: #a996ff;
+}
+.o68-chiffres {
+  width: 100%; margin-top: 16px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.o68-chiffre {
+  display: grid; gap: 3px; padding: 12px 6px; border-radius: 14px;
+  background: rgb(var(--panel-rgb) / .75);
+  border: 1px solid rgb(var(--neon-rgb) / .35);
+}
+.o68-chiffre b { font-size: 22px; font-weight: 800; color: #fff; }
+.o68-chiffre span {
+  font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: rgb(var(--cream-rgb) / .7);
+}
+
+/* ── Les intitulés : une barre violette à gauche ─────────── */
+.o68-section { margin-top: 20px; }
+.o68-titre-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.o68-titre {
+  position: relative; margin: 0 0 12px; padding-inline-start: 12px;
+  font-family: var(--sans); font-size: 14px; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase; color: #fff;
+}
+.o68-titre-ligne .o68-titre { margin: 0; }
+.o68-titre::before {
+  content: ''; position: absolute; inset-inline-start: 0; top: 1px; bottom: 1px; width: 4px;
+  border-radius: 2px; background: linear-gradient(180deg, #a996ff, var(--neon));
+}
+.o68-compte { font-size: 12.5px; font-weight: 600; color: rgb(var(--cream-rgb) / .65); white-space: nowrap; }
+
+/* ── « Explore le catalogue » : les pastilles ──────────────── */
+.pastilles {
+  display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(var(--gutter, 14px) * -1); padding: 2px var(--gutter, 14px) 6px;
+}
+.pastilles::-webkit-scrollbar { display: none; }
+.pastille {
+  flex: none; padding: 13px 18px; border-radius: 14px;
+  font: inherit; font-size: 13px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #fff; background: rgb(var(--panel-rgb) / .8);
+  border: 1px solid rgb(var(--neon-rgb) / .4);
+}
+.pastille[aria-pressed='true'] {
+  background: linear-gradient(180deg, #8f78ff, var(--neon-deep));
+  border-color: transparent; box-shadow: 0 6px 20px rgb(var(--neon-rgb) / .45);
+}
+.pastille:active { transform: scale(.96); }
+
+/* ── Les farms : carrousel de l'accueil et grille de l'onglet ── */
+.farms-piste {
+  display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(var(--gutter, 14px) * -1); padding: 2px var(--gutter, 14px) 8px;
+}
+.farms-piste::-webkit-scrollbar { display: none; }
+.farms-grille { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.farm-carte {
+  flex: none; width: 112px; padding: 14px 8px 12px; border-radius: 18px;
+  display: grid; justify-items: center; gap: 6px; text-align: center;
+  font: inherit; color: #fff;
+  background: rgb(var(--panel-rgb) / .8);
+  border: 1px solid rgb(var(--neon-rgb) / .35);
+}
+.farms-grille .farm-carte { width: auto; }
+.farm-carte[aria-pressed='true'] {
+  border-color: rgb(var(--neon-rgb) / .9);
+  box-shadow: 0 0 0 1px rgb(var(--neon-rgb) / .5), 0 0 22px rgb(var(--neon-rgb) / .35);
+}
+.farm-carte:active { transform: scale(.96); }
+.farm-logo {
+  width: 72px; height: 72px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center;
+  font-size: 22px; font-weight: 800; color: #fff;
+  background: radial-gradient(circle at 50% 35%, rgb(var(--neon-rgb) / .35), rgb(var(--void-rgb) / .9));
+  border: 2px solid rgb(var(--neon-rgb) / .55);
+}
+.farm-logo img { width: 100%; height: 100%; object-fit: cover; }
+.farm-logo--grand { width: 110px; height: 110px; font-size: 34px; }
+.farm-carte__nom { font-size: 13px; font-weight: 800; line-height: 1.2; }
+.farm-carte__compte { font-size: 11px; color: rgb(var(--cream-rgb) / .6); }
+.farm-page__tete { display: grid; justify-items: center; gap: 8px; margin: 10px 0 18px; text-align: center; }
+.farm-page__nom { margin: 0; font-size: 24px; font-weight: 800; color: #fff; }
+
+/* La recherche, au-dessus des références. */
+.find { padding: 0 0 12px; }
+.find__box input { height: 46px; border-radius: 23px; padding-inline: 42px 38px; }
+.find__icon { inset-inline-start: 15px; }
+
+/* ── Infos ────────────────────────────────────────────────── */
+.infos { display: grid; gap: 8px; margin: 0 0 16px; }
+.infos .contact__info {
+  padding: 12px 14px; border-radius: 14px;
+  background: rgb(var(--panel-rgb) / .8); border: 1px solid rgb(var(--neon-rgb) / .3);
+}
+
+/* ── La barre du bas : l'onglet ouvert dans un pavé violet ── */
+.tabbar { background: rgb(var(--night2-rgb) / .96); border-top-color: rgb(var(--neon-rgb) / .2); }
+.tabbar__item { margin: 6px 3px; border-radius: 14px; padding: 7px 2px 6px; }
+.tabbar__item[aria-selected='true'] {
+  color: #fff;
+  background: rgb(var(--neon-rgb) / .22);
+  box-shadow: inset 0 0 0 1px rgb(var(--neon-rgb) / .35);
+}
+.tabbar__emoji { filter: none; }
+
+/* Le bouton de musique flottant : un rond violet. */
+.juke {
+  background: linear-gradient(180deg, #9d85ff, var(--neon-deep)) !important;
+  border-color: transparent !important; color: #fff !important;
+  box-shadow: 0 6px 20px rgb(var(--neon-rgb) / .5) !important;
+}
+
+/* L'accueil : le logo, puis le nom en clair (La Grosse Frappe le cachait
+   derrière son logo), puis le message dans un panneau entier. */
+.bienvenue__logo.logo-rond { margin: 0 auto 2px; }
+.bienvenue__enseigne.o68-nom {
+  position: static; width: auto; height: auto; overflow: visible;
+  clip-path: none; white-space: normal; font-size: clamp(34px, 11vw, 44px);
+}
+.bienvenue .o68-devise { margin: 6px 0 16px; }
+.bienvenue__salut {
+  padding-top: 14px; border-radius: 18px 18px 0 0;
+  border: 1px solid rgb(var(--neon-rgb) / .3); border-bottom: 0;
+  color: #fff;
+}
+.bienvenue__texte strong { color: #c4b5fd; }
