@@ -22,7 +22,7 @@ import {
   apresRemise, prixDuFormat, prixDAppel, formatParDefaut, nettoyer, ajouter, changerQte,
   nombreDArticles, detailler, recapitulatif, plusFortePromo, QTE_MAX,
 } from '../webapp/js/panier.js';
-import { signInitData, getShopPass } from './helpers.mjs';
+import { signInitData, getShopPass, franchirLaPorte } from './helpers.mjs';
 
 const TOKEN = process.env.BOT_TOKEN;
 const BASE = process.env.TEST_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
@@ -174,6 +174,9 @@ try {
   const plein = format ? format.price : produit.price;
   const client = { id: 600000000 + Math.floor(Math.random() * 9999999), first_name: 'Testeur' };
   const initClient = signInitData(TOKEN, client);
+  // Le calcul d'entrée du bot peut être allumé par une suite précédente : le
+  // client du test l'a « passé », comme n'importe quel client qui commande.
+  await franchirLaPorte(BASE, admin['X-Telegram-Init-Data'], client.id);
   const pass = await getShopPass(BASE, initClient);
   const res = await fetch(`${BASE}/api/orders`, {
     method: 'POST',

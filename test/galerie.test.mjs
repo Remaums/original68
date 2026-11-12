@@ -234,7 +234,10 @@ await call(`/api/admin/products/${produit.id}`, {
 
 const avecVignette = (await (await fetch(`${BASE}/api/catalog`)).json()).products
   .find((p) => p.id === produit.id).media;
-check('La vignette arrive jusqu au client', avecVignette[0]?.thumbFileId === 'AAQ-vignette');
+// La vignette existe pour le client, mais sa référence Telegram reste ici :
+// il la demande par /api/media/…/apercu.
+check('Le client sait qu il y a une vignette', avecVignette[0]?.apercu === true);
+check('Sans recevoir sa référence Telegram', avecVignette[0]?.thumbFileId === undefined && avecVignette[0]?.fileId === undefined);
 
 r = await fetch(`${BASE}/api/media/${produit.id}/0/apercu`);
 data = await r.json().catch(() => ({}));
