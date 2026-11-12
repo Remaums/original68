@@ -77,6 +77,32 @@ try {
     (brut.match(/compte_temoin/g) ?? []).join(' ') || 'absent');
   check("Ni le nom du champ", !/sellerUsername/.test(brut));
 
+  // Le contrôle ci-dessus passait à vide sur une boutique sans photo : on
+  // donne à un produit une photo principale et une galerie déposées chez
+  // Telegram, puis on relit le catalogue comme le ferait un inconnu.
+  const cobaye = publique.products[0];
+  const avantPhoto = { photoFileId: null, media: [] };
+  await fetch(`${BASE}/api/admin/products/${cobaye.id}`, {
+    method: 'PATCH', headers: h,
+    body: JSON.stringify({
+      photoFileId: 'AgACAgTEMOINPHOTO',
+      media: [
+        { type: 'photo', fileId: 'AgACAgTEMOINGALERIE' },
+        { type: 'video', fileId: 'BAACAgTEMOINVIDEO', thumbFileId: 'AgACAgTEMOINAPERCU' },
+      ],
+    }),
+  });
+  const avecPhotos = await (await fetch(`${BASE}/api/catalog`)).text();
+  check('Ni la photo principale', !avecPhotos.includes('AgACAgTEMOINPHOTO'));
+  check('Ni la galerie', !avecPhotos.includes('AgACAgTEMOINGALERIE') && !avecPhotos.includes('BAACAgTEMOINVIDEO'));
+  check("Ni l'aperçu de la vidéo", !avecPhotos.includes('AgACAgTEMOINAPERCU'));
+  const servi = JSON.parse(avecPhotos).products.find((p) => p.id === cobaye.id);
+  check("Mais la boutique sait qu'il y a un aperçu", servi?.media?.[1]?.apercu === true);
+  check('Et garde ses deux médias', servi?.media?.length === 2, String(servi?.media?.length));
+  await fetch(`${BASE}/api/admin/products/${cobaye.id}`, {
+    method: 'PATCH', headers: h, body: JSON.stringify(avantPhoto),
+  });
+
   console.log('\n── Ce qui en sort, et doit en sortir ───────────────');
 
   check("Le nom de la boutique", Boolean(publique.shop?.shopName), publique.shop?.shopName);

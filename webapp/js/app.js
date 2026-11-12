@@ -2274,7 +2274,7 @@ function peindreLaPremiereImage(video) {
  * rectangle vide.
  */
 function posterDe(product, media, rang) {
-  if (media.thumbFileId) return `/api/media/${product.id}/${rang}/apercu`;
+  if (media.apercu || media.thumbFileId) return `/api/media/${product.id}/${rang}/apercu`;
   return product.image || '';
 }
 

@@ -262,7 +262,8 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/catalog', async (req, res, next) => {
   try {
-    const { products, categories } = await getCatalog();
+    const { products: bruts, categories } = await getCatalog();
+    const products = bruts.map(produitPublic);
     // `statuses` sert à l'écran « Mes commandes » de la Mini App : les
     // libellés et emojis de statut vivent côté serveur, une seule fois.
     const settings = await getSettings();
@@ -326,6 +327,23 @@ app.get('/api/catalog', async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * Un produit tel qu'il sort sans signature.
+ *
+ * Un `file_id` Telegram est une adresse que quiconque a le jeton du bot peut
+ * télécharger : il ne quitte jamais le serveur. La boutique n'en a pas besoin,
+ * elle passe par `/api/photo/…` et `/api/media/…`, qui le lisent ici. Seule
+ * l'existence d'un aperçu de vidéo l'intéresse : elle devient un drapeau.
+ */
+function produitPublic(produit) {
+  const { photoFileId: _photo, ...reste } = produit;
+  return {
+    ...reste,
+    media: (produit.media ?? []).map(({ fileId: _fichier, thumbFileId, ...media }) =>
+      (thumbFileId ? { ...media, apercu: true } : media)),
+  };
+}
 
 /**
  * Les jetons qui signent une session valide : le bot principal, et le secours
