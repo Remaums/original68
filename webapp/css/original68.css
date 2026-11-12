@@ -465,9 +465,7 @@ body { background-image: none; background-color: var(--night); }
   font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none;
   color: rgb(var(--cream-rgb) / .62);
 }
-.tabbar__emoji { font-size: 23px; line-height: 1; filter: saturate(.55) brightness(.8); }
 .tabbar__item[aria-selected='true'] { color: var(--jaune); text-shadow: none; }
-.tabbar__item[aria-selected='true'] .tabbar__emoji { filter: none; }
 
 /* ══ La commande, comme sur Napoli : le formulaire du panier ══ */
 .panier__form {
@@ -680,7 +678,6 @@ body { background-image: none; background-color: var(--night); }
   background: rgb(var(--neon-rgb) / .22);
   box-shadow: inset 0 0 0 1px rgb(var(--neon-rgb) / .35);
 }
-.tabbar__emoji { filter: none; }
 
 /* Le bouton de musique flottant : un rond violet. */
 .juke {
@@ -703,3 +700,16 @@ body { background-image: none; background-color: var(--night); }
   color: #fff;
 }
 .bienvenue__texte strong { color: #c4b5fd; }
+
+/* Les icônes de la barre du bas, dessinées pour la boutique : un trait
+   arrondi, et un aplat violet léger qui s'allume sur l'onglet ouvert. */
+.tabbar__icone {
+  width: 25px; height: 25px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.tabbar__icone .i-fond { fill: rgb(var(--neon-rgb) / .18); stroke: none; }
+.tabbar__item[aria-selected='true'] .tabbar__icone {
+  color: #fff; filter: drop-shadow(0 0 6px rgb(var(--neon-rgb) / .8));
+}
+.tabbar__item[aria-selected='true'] .tabbar__icone .i-fond { fill: url(#iconeDegrade); }
