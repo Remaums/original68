@@ -72,7 +72,7 @@ if (process.env.PORTE_SECOURS_SCENARIO) {
   const boutons = (e) => e.payload?.reply_markup?.inline_keyboard?.flat?.() ?? [];
   const lu = () => {
     const vu = envois.map((e) => ({
-      texte: e.payload?.text ?? '',
+      texte: e.payload?.text ?? e.payload?.caption ?? '', // l'accueil part en photo : légende
       boutique: boutons(e).some((b) => b?.web_app?.url),
       liens: boutons(e).map((b) => b?.url).filter(Boolean),
       touches: boutons(e).map((b) => b?.callback_data).filter(Boolean),

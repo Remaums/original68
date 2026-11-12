@@ -89,6 +89,10 @@ export const config = {
   webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   currency: process.env.CURRENCY ?? 'EUR',
   shopName: process.env.SHOP_NAME ?? 'Original68',
+  // Le libellé du bouton de menu, en bas à gauche du chat. Réglable sans
+  // toucher au nom de la boutique : l'enseigne s'y écrit à la manière du
+  // vendeur, avec sa pastille violette.
+  menuLabel: process.env.MENU_LABEL || 'ORIGINAL 68 🟣',
   // Le préfixe des références de commande. Trois à cinq lettres, en
   // majuscules : c'est ce qu'on lit dans une conversation pour savoir de
   // quelle boutique vient la commande dont on parle.

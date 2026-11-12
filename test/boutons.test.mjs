@@ -104,7 +104,8 @@ if (process.env.BOUTONS_SCENARIO) {
     }
     resultats.push({
       texte,
-      dit: envois.map((e) => e.payload?.text ?? '').join(' | '),
+      // L'accueil part en photo (le logo) : son texte est alors une légende.
+      dit: envois.map((e) => e.payload?.text ?? e.payload?.caption ?? '').join(' | '),
       boutons: envois.some((e) => e.payload?.reply_markup),
       // Le style de chaque bouton Mini App, pour que le chef puisse vérifier
       // la couleur sans qu'on lui renvoie tout le clavier.
@@ -196,11 +197,10 @@ async function avecUrl(webappUrl, commandes, admins = { ADMIN_IDS: '424242' }) {
   check('Avec une URL HTTPS, /start porte son bouton',
     r[0].boutons && r[0].refus.length === 0, `boutons ${r[0].boutons}`);
 
-  // Le vendeur a demandé un bouton rouge. C'est `style: "danger"`, arrivé
-  // avec la version 9.4 de l'API de Telegram — avant, un emoji dans le
-  // libellé était tout ce qu'on pouvait faire, et cette épreuve fige le fait
-  // qu'on ne soit pas revenu à ce pis-aller.
-  check('Et il est rouge', r[0].stylesMiniApp?.[0] === 'danger',
+  // Le vendeur voulait du violet. Telegram (API 9.4) n'offre que le rouge
+  // `danger`, le vert `success` et le bleu `primary` : le bleu est le plus
+  // proche, et cette épreuve fige qu'on ne soit pas revenu au rouge.
+  check('Et il est bleu', r[0].stylesMiniApp?.[0] === 'primary',
     JSON.stringify(r[0].stylesMiniApp));
   check("/admin ouvre l'espace admin pour l'admin",
     r[1].boutons && r[1].refus.length === 0, r[1].dit.slice(0, 45));

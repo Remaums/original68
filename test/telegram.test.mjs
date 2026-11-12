@@ -121,11 +121,27 @@ for (const cmd of ['/start', '/boutique']) {
 //    les interprète, Telegram les affiche. Le client lit « <strong> » ;
 //  - la phrase recopiée au lieu d'être reprise, et les deux divergent.
 {
-  const e = await jouer(message(CLIENT, '/start'));
-  const envoi = e.find((x) => x.payload?.text && accueilli(x.payload.text));
-  const texte = envoi?.payload?.text ?? '';
+  // Telegram n'accepte le bouton Mini App qu'en HTTPS : sans adresse de ce
+  // genre, le bot n'en pose pas, et il n'y aurait pas de couleur à vérifier.
+  const adresseAvant = config.webappUrl;
+  config.webappUrl = 'https://boutique.exemple';
+  const e = await jouer(message(CLIENT, '/start')).finally(() => { config.webappUrl = adresseAvant; });
+  const envoi = e.find((x) => accueilli(x.payload?.text ?? x.payload?.caption));
+  const texte = envoi?.payload?.text ?? envoi?.payload?.caption ?? '';
 
   check("L'accueil part bien", Boolean(envoi), dit(e).slice(0, 40));
+  // Le logo de la boutique, au-dessus du message.
+  check("Il part avec le logo, en photo", envoi?.method === 'sendPhoto' && Boolean(envoi?.payload?.photo),
+    envoi?.method);
+  // Le bouton de la boutique : bleu, la couleur la plus proche du violet
+  // parmi les trois que Telegram connaît. Le rouge jurait avec la boutique.
+  const boutonBoutique = (envoi?.payload?.reply_markup?.inline_keyboard ?? []).flat().find((b) => b.web_app);
+  check('Le bouton de la boutique est bleu, pas rouge', boutonBoutique?.style === 'primary',
+    boutonBoutique?.style ?? 'sans bouton');
+  // Une phrase sans {boutique} ne reçoit pas le nom collé à son dernier mot.
+  check("Le nom de la boutique n'est pas collé au bout de la phrase",
+    !texte.includes(`🏆*${config.shopName}`) && !/\S\*[^*\s][^*]*\*\n/.test(texte.split('\n')[0] + '\n'),
+    texte.split('\n')[0].slice(-40));
   check('En MarkdownV2', envoi?.payload?.parse_mode === 'MarkdownV2', envoi?.payload?.parse_mode);
 
   // Hors des passages en code, tout caractère réservé doit porter sa barre.
@@ -503,7 +519,8 @@ for (const [label, texte] of [
   // client cherche des yeux en bas de l'écran. Repris des réglages, donc il
   // suit un changement de nom — et borné, parce qu'un libellé trop long
   // ferait refuser l'appel et le menu retomberait sur « Menu » en silence.
-  check("Il porte le nom de la boutique", vu?.text?.startsWith(config.shopName), vu?.text);
+  check("Il porte l'enseigne voulue par le vendeur", vu?.text === config.menuLabel, vu?.text);
+  check('Par défaut : « ORIGINAL 68 🟣 »', process.env.MENU_LABEL || vu?.text === 'ORIGINAL 68 🟣', vu?.text);
   check('Et il tient dans ce que Telegram accepte', (vu?.text?.length ?? 99) <= 64,
     `${vu?.text?.length} caractères`);
 

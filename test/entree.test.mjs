@@ -58,7 +58,7 @@ if (process.env.ENTREE_SCENARIO) {
   let compteur = 9000;
   const lu = () => {
     const vu = envois.map((e) => ({
-      texte: e.payload?.text ?? '',
+      texte: e.payload?.text ?? e.payload?.caption ?? '', // l'accueil part en photo : légende
       // Le bouton qui ouvre la Mini App : c'est lui, et lui seul, qui
       // signifie « la boutique est ouverte ».
       boutique: (e.payload?.reply_markup?.inline_keyboard?.flat?.() ?? []).some((b) => b?.web_app?.url),

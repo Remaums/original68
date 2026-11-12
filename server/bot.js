@@ -1,4 +1,6 @@
 import { Bot, InlineKeyboard, InputFile } from 'grammy';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { listOrders, STATUSES, setStatus } from './orders.js';
 import { restoreStock, getCatalog, addProductMedia, MEDIA_MAX } from './catalog.js';
@@ -65,7 +67,7 @@ const urlUtilisable = () => /^https:\/\/[^\s]+$/.test(config.webappUrl);
 // appel — il en manquait justement sur les commandes les plus utilisées.
 const shopKeyboard = () =>
   urlUtilisable()
-    ? new InlineKeyboard().webApp('🛒 Ouvrir la boutique', config.webappUrl).danger()
+    ? new InlineKeyboard().webApp('🛒 Ouvrir la boutique', config.webappUrl).primary()
     : undefined;
 
 /**
@@ -107,14 +109,15 @@ export async function configurerMenu() {
   await bot.api.setChatMenuButton({
     menu_button: {
       type: 'web_app',
-      // Le nom de la boutique plutôt que le mot « Boutique » : c'est
-      // l'enseigne, et c'est elle que le client cherche des yeux en bas de
-      // l'écran. Repris des réglages, donc il suit un changement de nom.
+      // L'enseigne plutôt que le mot « Boutique » : c'est elle que le client
+      // cherche des yeux en bas de l'écran. Écrite comme le vendeur la veut
+      // (MENU_LABEL, « ORIGINAL 68 🟣 » par défaut).
       //
       // Telegram borne ce libellé ; on le raccourcit plutôt que de le lui
       // faire refuser, auquel cas le menu retomberait sur « Menu » sans que
-      // rien ne le dise.
-      text: `${config.shopName} ⚡`.slice(0, MENU_MAX),
+      // rien ne le dise. `Array.from` coupe entre deux caractères, jamais au
+      // milieu d'un emoji.
+      text: Array.from(config.menuLabel || config.shopName).slice(0, MENU_MAX).join(''),
       web_app: { url: config.webappUrl },
     },
   });
@@ -232,7 +235,12 @@ function markdownDepuisHtml(texte) {
  * forme échappée, ce qui marche jusqu'au jour où l'échappement change.
  */
 function phraseDAccueil(nom, langue) {
-  const [avant, apres] = String(tr(langue, 'accueil.texte')).split('{boutique}');
+  const texte = String(tr(langue, 'accueil.texte'));
+  // Une phrase qui ne nomme pas la boutique reste telle quelle : y coller le
+  // nom au bout donnait « farm par farm 🏆Original68 ». Le logo, au-dessus
+  // du message, le dit déjà.
+  if (!texte.includes('{boutique}')) return markdownDepuisHtml(texte);
+  const [avant, apres] = texte.split('{boutique}');
   return markdownDepuisHtml(avant) + `*${escapeMarkdown(nom)}*` + markdownDepuisHtml(apres ?? '');
 }
 
@@ -255,10 +263,10 @@ function tr(langue, clef) {
  */
 function clavierDAccueil(langue) {
   const clavier = new InlineKeyboard();
-  // `.danger()` est le rouge de Telegram, arrivé avec la version 9.4 de son
-  // API en février 2026. C'est la seule façon de colorer un bouton : avant,
-  // un emoji rouge dans le libellé était tout ce qu'on pouvait faire.
-  if (urlUtilisable()) clavier.webApp('🛒 Ouvrir la boutique', config.webappUrl).danger().row();
+  // Telegram ne connaît que trois couleurs de bouton (API 9.4) : rouge
+  // `danger`, vert `success`, bleu `primary`. Pas de violet : le bleu est
+  // le plus proche de la boutique, le rouge jurait avec elle.
+  if (urlUtilisable()) clavier.webApp('🛒 Ouvrir la boutique', config.webappUrl).primary().row();
   clavier.text(`🌐 ${tr(langue, 'profil.langue')}`, 'lang:menu');
   return clavier;
 }
@@ -291,7 +299,7 @@ function texteDAccueil(langue, identifiant) {
     // quand, comment, et avec quoi on paie. Une par ligne — collées, on
     // les lit comme une phrase et on n'en retient aucune.
     `${ligne('🕒', 'accueil.horaires')}\n` +
-    `${ligne('🛵', 'accueil.service')}\n` +
+    `${ligne('🤝', 'accueil.service')}\n` +
     `${ligne('💶', 'contact.especes')}\n\n` +
     // Le panier a disparu de la boutique il y a longtemps : ce message
     // continuait d'en promettre un à chaque nouveau client, et c'est la
@@ -301,12 +309,28 @@ function texteDAccueil(langue, identifiant) {
   );
 }
 
+/**
+ * Le logo de la boutique, en photo au-dessus du message d'accueil.
+ *
+ * Envoyé depuis le disque la première fois, puis par la référence que
+ * Telegram rend : la même image n'est pas re-téléversée à chaque /start.
+ * La référence ne vit qu'en mémoire — elle ne sort jamais du serveur.
+ */
+const LOGO_ACCUEIL = fileURLToPath(new URL('../webapp/assets/ui/accueil-bot.jpg', import.meta.url));
+let logoAccueilId = null;
+
 const accueillir = async (ctx) => {
   const { code } = await langueDe(ctx.from.id, ctx.from.language_code);
-  await ctx.reply(texteDAccueil(code, ctx.from.id), {
-    parse_mode: 'MarkdownV2',
-    reply_markup: clavierDAccueil(code),
-  });
+  const texte = texteDAccueil(code, ctx.from.id);
+  const options = { parse_mode: 'MarkdownV2', reply_markup: clavierDAccueil(code) };
+  // Une photo qui ne part pas (fichier absent, référence périmée) ne doit pas
+  // coûter l'accueil : on retombe sur le message seul.
+  const envoye = existsSync(LOGO_ACCUEIL)
+    ? await ctx.replyWithPhoto(logoAccueilId ?? new InputFile(LOGO_ACCUEIL), { ...options, caption: texte })
+      .then((m) => { logoAccueilId = m?.photo?.at(-1)?.file_id ?? logoAccueilId; return true; })
+      .catch(() => { logoAccueilId = null; return false; })
+    : false;
+  if (!envoye) await ctx.reply(texte, options);
   return proposerLeSecours(ctx);
 };
 
@@ -334,12 +358,14 @@ bot.callbackQuery(/^lang:([a-z]{2})$/, async (ctx) => {
   // message d'accueil ferait croire à un second /start, et le premier
   // resterait au-dessus dans l'ancienne langue — c'est exactement ce qu'on
   // vient de lui demander de ne plus lire.
-  await ctx
-    .editMessageText(texteDAccueil(code, ctx.from.id), {
-      parse_mode: 'MarkdownV2',
-      reply_markup: clavierDAccueil(code),
-    })
-    .catch(() => {});
+  // L'accueil porte le logo : son texte est alors une légende, qui se
+  // réécrit par une autre méthode que celle d'un message simple.
+  const options = { parse_mode: 'MarkdownV2', reply_markup: clavierDAccueil(code) };
+  const texte = texteDAccueil(code, ctx.from.id);
+  await (ctx.callbackQuery.message?.photo
+    ? ctx.editMessageCaption({ ...options, caption: texte })
+    : ctx.editMessageText(texte, options)
+  ).catch(() => {});
 });
 
 /**

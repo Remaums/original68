@@ -87,16 +87,24 @@ const start = async (langue) => {
       entities: [{ type: 'bot_command', offset: 0, length: 6 }],
     },
   });
-  return envois.find((e) => e.method === 'sendMessage');
+  // L'accueil part en photo (le logo), son texte en légende : on le ramène
+  // sous `payload.text` pour que les épreuves lisent la même chose.
+  const m = envois.find((e) => e.method === 'sendPhoto' || e.method === 'sendMessage');
+  return m && { ...m, payload: { ...m.payload, text: m.payload.text ?? m.payload.caption } };
 };
 
-const toucher = async (donnee, langue = 'fr') => {
+const toucher = async (donnee, langue = 'fr', { photo = false } = {}) => {
   envois = [];
+  // Le message touché : l'accueil avec son logo (photo + légende), ou un
+  // message simple, comme ceux envoyés avant que l'accueil porte le logo.
+  const contenu = photo
+    ? { photo: [{ file_id: 'x', file_unique_id: 'x', width: 1, height: 1 }], caption: 'x' }
+    : { text: 'x' };
   await bot.handleUpdate({
     update_id: compteur++,
     callback_query: {
       id: String(compteur), from: qui(langue), chat_instance: '1', data: donnee,
-      message: { message_id: 1, date: 0, chat: { id: CLIENT, type: 'private' }, from: qui(langue), text: 'x' },
+      message: { message_id: 1, date: 0, chat: { id: CLIENT, type: 'private' }, from: qui(langue), ...contenu },
     },
   });
   return envois;
@@ -146,6 +154,17 @@ try {
     (edite?.payload?.text ?? '').slice(0, 40));
   check('Le clavier redevient celui de l accueil',
     touches(edite).some((t) => /Taal/.test(t)), touches(edite).join(' | '));
+
+  // L'accueil d'aujourd'hui porte le logo : son texte est une légende, et
+  // `editMessageText` sur une photo est refusé par Telegram — le client
+  // toucherait sa langue et rien ne changerait.
+  e = await toucher('lang:nl', 'fr', { photo: true });
+  const legende = e.find((x) => x.method === 'editMessageCaption');
+  check('Sous le logo, c est la légende qui se réécrit',
+    Boolean(legende) && !e.some((x) => x.method === 'editMessageText' || x.method === 'sendMessage'),
+    e.map((x) => x.method).join(','));
+  check('Elle aussi en néerlandais', parle('nl', legende?.payload?.caption),
+    (legende?.payload?.caption ?? '').slice(0, 40));
 
   check('Le choix est enregistré côté serveur',
     (await langueDe(CLIENT, 'fr')).code === 'nl', JSON.stringify(await langueDe(CLIENT, 'fr')));
