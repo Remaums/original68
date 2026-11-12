@@ -632,6 +632,8 @@ function compterLePourcentage(duree) {
     if ($('charge')?.hidden) return;
     const part = Math.min(1, (maintenant - debut) / duree);
     pct.textContent = `${Math.round(part * 100)} %`;
+    // L'anneau autour du logo suit la même course que le pourcentage.
+    $('charge')?.style.setProperty('--avance', part.toFixed(3));
     if (part < 1) requestAnimationFrame(tour);
   };
   requestAnimationFrame(tour);
@@ -3365,7 +3367,7 @@ function ecrireLHoraire() {
   const ouvert = state.opening?.open !== false;
 
   pastille.textContent = ouvert
-    ? t('accueil.horaires')
+    ? `${t('accueil.horaires')} · ${t('o68.septSurSept')}`
     : state.opening?.retour
       ? `${t('etat.retourA')} ${state.opening.retour}`
       : t('etat.fermePourLInstant');

@@ -716,3 +716,123 @@ body { background-image: none; background-color: var(--night); }
 
 /* Le bouton « Écrire à @original68off » de la page Contact. */
 .contact__ecrire { margin: 4px 0 16px; text-decoration: none; text-transform: none; }
+
+/* ══ L'écran de chargement : le logo rond animé ═══════════════
+   Trois mouvements, chacun à son rythme :
+   - l'anneau se remplit avec le chargement (--avance, de 0 à 1, posé
+     par le script au même rythme que le pourcentage) ;
+   - une lueur fait le tour, plus vite, pour dire que ça travaille ;
+   - le logo respire, lentement.
+   Sans mouvement (réglage du téléphone ou de la boutique), il reste
+   l'anneau qui se remplit : c'est une information, pas un décor. */
+.charge__tete { top: calc(18vh + var(--safe-top)); }
+.charge-anneau {
+  position: relative; width: 184px; height: 184px;
+  display: grid; place-items: center;
+  animation: anneau-entre .7s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+.charge-anneau::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from -90deg,
+    #c084fc 0deg, var(--neon) calc(var(--avance, 0) * 360deg),
+    rgb(var(--cream-rgb) / .1) calc(var(--avance, 0) * 360deg));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  filter: drop-shadow(0 0 8px rgb(var(--neon-rgb) / .7));
+}
+.charge-anneau__lueur {
+  position: absolute; inset: -6px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 70%, rgb(var(--neon-rgb) / .2) 82%, #e9e2ff 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: anneau-tourne 1.3s linear infinite;
+}
+.charge-anneau .logo-rond {
+  width: 148px; height: 148px; margin: 0;
+  animation: logo-respire 2.6s ease-in-out infinite;
+}
+@keyframes anneau-entre {
+  from { opacity: 0; transform: scale(.7) rotate(-12deg); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes anneau-tourne { to { transform: rotate(360deg); } }
+@keyframes logo-respire {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 4px rgb(var(--neon-rgb) / .15), 0 0 24px rgb(var(--neon-rgb) / .4); }
+  50%      { transform: scale(1.045); box-shadow: 0 0 0 6px rgb(var(--neon-rgb) / .22), 0 0 46px rgb(var(--neon-rgb) / .7); }
+}
+.charge__tete .o68-nom { margin-top: 18px; }
+/* La barre du bas ferait doublon avec l'anneau : elle s'efface, le
+   pourcentage reste. */
+.charge__jauge { display: none; }
+
+[data-anim='off'] .charge-anneau, [data-anim='off'] .charge-anneau__lueur,
+[data-anim='off'] .charge-anneau .logo-rond { animation: none; }
+[data-anim='off'] .charge-anneau__lueur { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .charge-anneau, .charge-anneau__lueur, .charge-anneau .logo-rond { animation: none; }
+  .charge-anneau__lueur { display: none; }
+}
+
+/* Le chargement n'a pas d'image de fond : un violet nuit uni, et un halo
+   discret derrière le logo pour que l'anneau ait de quoi briller. */
+.charge {
+  background:
+    radial-gradient(60% 40% at 50% 30%, rgb(var(--neon-rgb) / .22), transparent 70%),
+    linear-gradient(180deg, rgb(var(--night2-rgb)), rgb(var(--void-rgb)));
+}
+
+/* ══ Le message d'accueil : un seul panneau ═══════════════════
+   Le salut, la promesse en une phrase, puis « comment ça marche » en
+   trois étapes numérotées, les pastilles pratiques et les lieux. Les
+   morceaux hérités (salut, texte) perdent leur propre cadre : c'est le
+   panneau qui le porte, d'un seul tenant. */
+.o68-accueil {
+  width: 100%; text-align: start;
+  padding: 18px 18px 16px;
+  background:
+    radial-gradient(120% 70% at 100% 0%, rgb(var(--neon-rgb) / .22), transparent 60%),
+    rgb(var(--panel-rgb) / .86);
+  border: 1px solid rgb(var(--neon-rgb) / .35);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px rgb(0 0 0 / .45), inset 0 1px 0 rgb(255 255 255 / .06);
+}
+.o68-accueil .bienvenue__salut,
+.o68-accueil .bienvenue__texte {
+  padding: 0; background: none; border: 0; border-radius: 0;
+}
+.o68-accueil .bienvenue__salut {
+  font-family: var(--display); font-size: 21px; font-weight: 800; color: #fff;
+}
+.o68-accueil .bienvenue__texte { margin-top: 4px; font-size: 14.5px; line-height: 1.45; }
+.o68-accueil__titre {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0 10px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: #c4b5fd;
+}
+.o68-accueil__titre::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgb(var(--neon-rgb) / .5), transparent);
+}
+.o68-etapes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.o68-etapes li {
+  display: grid; grid-template-columns: 28px 1fr; gap: 11px; align-items: center;
+  font-size: 13.5px; line-height: 1.4; color: rgb(var(--cream-rgb) / .9);
+}
+.o68-etapes strong { color: #fff; }
+.o68-etapes__num {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  font-family: var(--display); font-size: 13px; font-weight: 800; color: #fff;
+  background: linear-gradient(180deg, #9d85ff, var(--neon-deep));
+  box-shadow: 0 0 14px rgb(var(--neon-rgb) / .55);
+}
+.o68-accueil .bienvenue__infos { justify-content: flex-start; margin-top: 16px; }
+.o68-accueil .bienvenue__info { font-size: 11px; background: rgb(var(--neon-rgb) / .12); border-color: rgb(var(--neon-rgb) / .3); }
+.o68-accueil .bienvenue__info-icone { color: #c4b5fd; }
+.o68-accueil__lieux {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 12px 0 0; font-size: 12px; line-height: 1.45;
+  color: rgb(var(--cream-rgb) / .72);
+}
+.o68-accueil__lieux .bienvenue__info-icone { margin-top: 2px; }
+.bienvenue__langues { margin-top: 14px; }
