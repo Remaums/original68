@@ -1,0 +1,1563 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { webhookCallback } from 'grammy';
+
+import { config, publicConfig, assertConfigured } from './config.js';
+import { adminAPrevenir, vendeurJoignable } from './contact.js';
+import { verifyInitDataAny } from './telegram-auth.js';
+import { configure as secoursConfigure, estInscrit as estInscritAuSecours, combien as combienAuSecours } from './secours.js';
+import {
+  lienDuSecours, botSecours, prevenirLesInscrits, configurerLesCommandesDuSecours,
+} from './bot-secours.js';
+import { creerLaVeille, resumeDuSecours } from './veille.js';
+import { servirLaPage } from './pages.js';
+import { decisionDEntree } from './entree.js';
+import { langueDe, choisirLaLangue } from './langue.js';
+import {
+  HttpError,
+  getCatalog,
+  getProduct,
+  priceOf,
+  reserveStock,
+  restoreStock,
+} from './catalog.js';
+import { createOrder, listOrders, getOrder, slotCounts, STATUSES } from './orders.js';
+import { getSettings, isBlocked } from './settings.js';
+import { buildChallenge, solveChallenge, passIsValid } from './captcha.js';
+import { getVerification, isApproved } from './verification.js';
+import { isOpenNow, nextChange, nextOpeningLabel } from './opening.js';
+import { servirMedia, etatDuCache } from './media-cache.js';
+import { playlistPublique, morceauParId } from './musique.js';
+import { waitlistKey, subscribe, isSubscribed } from './waitlist.js';
+import { bestDiscount, releasePromo } from './promos.js';
+import {
+  findZone, findSlot, availableSlots, slotLabel,
+  normalizeAddress, adresseIncomplete, adresseEnClair,
+} from './delivery.js';
+import { adminRouter, requireAdmin } from './admin.js';
+import {
+  bot, notifyAdmin, notifyOrderPlaced, notifyLowStock, notifyNouvelAvis, configurerMenu,
+  configurerLesCommandes,
+  sendFileToAdmin,
+} from './bot.js';
+import { demarrerLEntretien } from './entretien.js';
+import {
+  avisDuProduit, notesDuCatalogue, avisDeLaCommande, deposerAvis, refusDAvis, nomPublic,
+} from './avis.js';
+import { storageKind, claimDataDir } from './store.js';
+import { listerAdmins, estAdmin } from './admins.js';
+import { estPasse, ouvrirLaPorte } from './bot-captcha.js';
+import { noterPassage } from './presence.js';
+import { CANAUX, preferencesDe, enregistrerPreferences } from './preferences.js';
+import { favorisDe, basculerFavori, compterParProduit, MAX as FAVORIS_MAX } from './favoris.js';
+import { estDesabonne } from './annonces.js';
+
+/** Vrai quand ce fichier est lancé directement (`npm start`), faux quand il
+ *  est simplement importé — par la fonction serverless de `api/index.js`. */
+/** La ronde qui surveille les deux portes. Montée au démarrage, en mode long polling seulement. */
+let veille = null;
+
+const standalone =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+assertConfigured({ exit: standalone });
+
+const webappDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'webapp');
+const app = express();
+
+// Le runtime serverless de Vercel lit le corps de la requête avant nous et
+// l'expose sur `req.body` : le flux est alors épuisé (`req.readable === false`)
+// et `express.json()` répondrait « stream is not readable » (HTTP 500). On
+// reprend donc le corps déjà analysé et on marque la requête comme traitée.
+// En local, rien de tout ça : le flux est intact, ce filtre ne fait rien.
+app.use((req, res, next) => {
+  if (req._body || req.readable !== false) return next();
+  try {
+    req.body = req.body ?? {};
+  } catch {
+    return res.status(400).json({ error: 'JSON invalide.' });
+  }
+  req._body = true;
+  next();
+});
+
+/**
+ * Les deux routes qui acceptent un gros corps, et le portier posé devant.
+ *
+ * L'ordre compte plus qu'il n'en a l'air. Ces analyseurs étaient montés avant
+ * `adminRouter`, donc avant toute vérification de signature : n'importe qui
+ * pouvait faire mettre vingt-et-un mégaoctets en mémoire au serveur, sans
+ * compte, sans rien — le refus 401 n'arrivait qu'une fois le corps entièrement
+ * reçu. Quelques requêtes simultanées suffisaient à faire tomber la boutique.
+ *
+ * Le portier est donc posé devant, sur ces chemins uniquement : il ne lit que
+ * les en-têtes, et coupe la connexion avant le premier octet de charge utile.
+ */
+const CHEMINS_LOURDS = [
+  '/api/admin/backup/restore',
+  '/api/admin/backup/inspect',
+  '/api/admin/products/:id/media/upload',
+  '/api/admin/products/:id/image/upload',
+];
+app.use(CHEMINS_LOURDS, requireAdmin);
+
+// Une sauvegarde complète pèse bien plus que ce qu'on accepte ailleurs : ces
+// deux routes ont leur propre limite, montée avant la limite générale pour
+// que celle-ci ne rejette pas le corps avant d'y arriver. Le reste de l'API
+// n'a aucune raison de recevoir plus de 64 Ko.
+app.use(['/api/admin/backup/restore', '/api/admin/backup/inspect'], express.json({ limit: '32mb' }));
+
+// L'envoi d'un média depuis la galerie du téléphone arrive en corps brut :
+// pas de multipart, donc pas de dépendance de plus pour le décoder. Le nom et
+// le type voyagent dans l'URL, le fichier est le corps. La limite couvre le
+// plus gros des deux plafonds Telegram ; la route affine ensuite selon le type.
+app.use(
+  [
+    '/api/admin/products/:id/media/upload',
+    '/api/admin/products/:id/image/upload',
+    // Sans cette ligne, un morceau tombait dans `express.json()` juste en
+    // dessous, qui rendait un objet vide : la route répondait « Aucun fichier
+    // reçu » sur un fichier pourtant bien arrivé.
+    '/api/admin/musique/upload',
+  ],
+  express.raw({ type: () => true, limit: '21mb' })
+);
+app.use(express.json({ limit: '64kb' }));
+
+// La Mini App tourne dans une WebView Telegram : ces en-têtes évitent qu'elle
+// soit embarquée ailleurs et limitent ce que la page peut charger.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
+
+/* ── Le rideau de fer ────────────────────────────────────────
+   Baissé, la boutique n'existe plus : la page d'accueil renvoie ailleurs et
+   l'API du client refuse tout. Ce n'est pas la fermeture ordinaire, qui dit
+   « on rouvre à 13h » et reste une boutique reconnaissable — ici il n'y a
+   rien à reconnaître.
+
+   Trois choses restent debout, et ce n'est pas un oubli :
+
+   - l'espace admin et son API, sans quoi le bouton serait une porte à sens
+     unique : baissé le rideau, plus moyen d'aller le relever ;
+   - les fichiers dont cet espace a besoin pour s'afficher — feuilles de
+     style, script, polices — pour la même raison ;
+   - la route de santé, qui ne dit qu'un booléen et sert à savoir si le
+     serveur tourne encore.
+
+   Le reste est coupé avant `express.static` : plus haut dans la chaîne, la
+   page aurait été servie avant qu'on ait pu la retenir. */
+const RIDEAU_LAISSE_PASSER = [
+  '/admin', '/admin.html',
+  '/api/admin/',
+  '/css/', '/js/', '/assets/',
+  '/api/health',
+];
+
+app.use(async (req, res, next) => {
+  let baisse = false;
+  try {
+    baisse = (await getSettings()).urgence === true;
+  } catch {
+    // Réglages illisibles : on ne baisse pas un rideau sur un doute. Une
+    // panne de disque fermerait la boutique sans que personne ne l'ait
+    // demandé, et sans moyen de la rouvrir.
+    return next();
+  }
+  if (!baisse) return next();
+  if (RIDEAU_LAISSE_PASSER.some((prefixe) => req.path === prefixe || req.path.startsWith(prefixe))) {
+    return next();
+  }
+
+  // L'API du client se tait, en refusant proprement : une page blanche
+  // laisserait une Mini App déjà ouverte tourner dans le vide.
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(503).json({ error: 'Boutique indisponible.' });
+  }
+
+  // Et la page s'en va. Une redirection 302 suffirait sur un navigateur ;
+  // une WebView est plus capricieuse avec les redirections vers un autre
+  // domaine, alors on sert une page minuscule qui s'en va elle-même — par
+  // le script, et par la balise de rafraîchissement s'il est coupé.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.status(200).send(
+    '<!doctype html><html lang="fr"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<meta http-equiv="refresh" content="0;url=https://www.google.com/">' +
+      '<title>Google</title></head><body style="margin:0;background:#fff">' +
+      '<script>location.replace("https://www.google.com/")</script>' +
+      '<noscript><a href="https://www.google.com/">Google</a></noscript>' +
+      '</body></html>'
+  );
+});
+
+// Les deux pages passent par `servirLaPage`, qui colle une empreinte des
+// scripts et des styles sur leurs adresses. Monté AVANT `express.static`,
+// sinon celui-ci servirait le fichier brut et l'empreinte ne serait jamais
+// posée. Voir `pages.js` : c'est ce qui empêche un téléphone de garder un
+// vieux script le jour où l'API change.
+for (const [chemins, fichier] of [
+  [['/', '/index.html'], 'index.html'],
+  [['/admin', '/admin.html'], 'admin.html'],
+]) {
+  app.get(chemins, servirLaPage(webappDir, fichier));
+}
+
+app.use(express.static(webappDir, { extensions: ['html'] }));
+
+/* ── Santé ───────────────────────────────────────────────── */
+
+/**
+ * Vérifie d'un coup d'œil qu'un déploiement est vivant : configuration
+ * complète et stockage joignable. Ne renvoie que des booléens et des
+ * compteurs — jamais un token, une URL de base ni un identifiant d'admin.
+ */
+app.get('/api/health', async (req, res) => {
+  const health = {
+    ok: true,
+    shop: config.shopName,
+    storage: storageKind,
+    config: {
+      botToken: Boolean(config.botToken),
+      webappUrl: Boolean(config.webappUrl),
+      sellerUsername: Boolean(vendeurJoignable()),
+      adminIds: config.adminIds.length,
+      webhookSecret: Boolean(config.webhookSecret),
+    },
+  };
+
+  // On touche chaque magasin, pas seulement le catalogue : un fichier de
+  // commandes illisible laissait la boutique se déclarer en bonne santé, et
+  // le vendeur ne l'apprenait qu'à la première commande perdue.
+  try {
+    const [{ products }, settings, commandes] = await Promise.all([
+      getCatalog(),
+      getSettings(),
+      listOrders({ limit: 1 }),
+    ]);
+    health.products = products.length;
+    health.open = isOpenNow(settings.opening).open;
+    health.orders = Array.isArray(commandes);
+    health.medias = await etatDuCache();
+  } catch (err) {
+    health.ok = false;
+    // Le détail reste dans le journal, où seul l'exploitant le lit. Le message
+    // du magasin nomme des chemins absolus, l'utilisateur système sous lequel
+    // la boutique tourne et le nom du service systemd — de quoi dessiner la
+    // machine à qui interroge une route publique et sans signature.
+    console.error('Stockage injoignable :', err.message);
+    health.error = 'Stockage injoignable — voir le journal du serveur.';
+    return res.status(503).json(health);
+  }
+
+  res.json(health);
+});
+
+/* ── Boutique ────────────────────────────────────────────── */
+
+app.get('/api/catalog', async (req, res, next) => {
+  try {
+    const { products, categories } = await getCatalog();
+    // `statuses` sert à l'écran « Mes commandes » de la Mini App : les
+    // libellés et emojis de statut vivent côté serveur, une seule fois.
+    const settings = await getSettings();
+    // La Mini App a besoin de savoir quelles portes elle doit présenter.
+    res.json({
+      // Le nom de la boutique et la monnaie, rien de plus. Le compte du
+      // vendeur s'est trouvé ici longtemps, pour un bouton qui ouvrait sa
+      // conversation ; ce bouton n'existe plus, et cette route se lit sans
+      // signature.
+      shop: publicConfig,
+      categories,
+      products,
+      statuses: STATUSES,
+      gates: {
+        age: settings.features.ageGate,
+        captcha: settings.captcha.enabled,
+        verification: settings.verification.enabled,
+        // L'épreuve du chat : la Mini App doit savoir qu'elle peut être
+        // refusée avant d'afficher quoi que ce soit. Deux marches derrière
+        // un seul drapeau — le bot de secours, puis le calcul — parce que
+        // c'est un seul voile qui les porte, et qu'il ne sait pas encore
+        // laquelle des deux attend ce client-là.
+        porte:
+          settings.features.botCaptcha ||
+          (secoursConfigure() && settings.features.porteSecours),
+      },
+      // La Mini App masque ce qui est éteint ; le serveur, lui, refuse.
+      features: settings.features,
+      // `nextChange` alimente le bandeau qui décompte : un client qui remplit
+      // son panier a besoin de savoir s'il a le temps de finir.
+      opening: {
+        ...isOpenNow(settings.opening),
+        message: settings.opening.message,
+        prochain: nextChange(settings.opening),
+        // L'heure de retour, dans le fuseau de la boutique. Le bandeau
+        // d'accueil l'annonce quand la boutique est fermée ; le client ne
+        // peut pas la déduire du décompte, qui ne porte pas de fuseau.
+        retour: nextOpeningLabel(settings.opening),
+      },
+      // La playlist : les titres et leur ordre, jamais les `file_id`. Un
+      // `file_id` est une adresse utilisable par quiconque a le token du bot,
+      // et cette réponse-ci se lit sans la moindre signature.
+      musique: playlistPublique(settings.musique, settings.features.musique),
+      fulfillment: settings.fulfillment,
+      // Les paliers sont publics : c'est une promesse d'affichage (« −10 %
+      // dès 100 € »), pas un secret. Les codes, eux, ne sortent jamais d'ici.
+      discounts: { tiers: settings.features.tiers ? settings.discounts.tiers : [] },
+      // Les zones sont une information de service : le client doit savoir si
+      // on descend chez lui, et à quelles conditions, avant de remplir son panier.
+      zones: settings.features.zones ? settings.zones : [],
+      slots: { enabled: settings.slots.enabled },
+      // Les notes voyagent avec le catalogue : une étoile sur une carte ne
+      // vaut pas un aller-retour de plus, et la grille les affiche toutes.
+      notes: settings.features.avis ? await notesDuCatalogue() : {},
+      // Combien de clients ont mis chaque produit en favori : un compte, pas
+      // une liste — personne ne lit ici qui aime quoi.
+      coeurs: settings.features.favoris ? await compterParProduit() : {},
+      promoBandeau: settings.promoBandeau,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Les jetons qui signent une session valide : le bot principal, et le secours
+ * quand il existe. Calculé une fois — la liste ne change pas en cours de vie.
+ */
+const JETONS = [config.botToken, config.botTokenSecours].filter(Boolean);
+
+/**
+ * Chaque appel authentifié doit porter l'en-tête signé par Telegram.
+ *
+ * Deux signatures sont acceptées, pas une. La Mini App ouverte depuis le bot
+ * de secours est signée par le jeton du secours : la refuser reviendrait à
+ * avoir une porte de secours qui donne sur un mur. Les deux jetons désignent
+ * la même boutique et les mêmes clients — c'est le même identifiant Telegram
+ * qui sort des deux vérifications.
+ *
+ * L'ordre compte un peu : le principal d'abord, parce que c'est lui qui sert
+ * la quasi-totalité des appels, et qu'un HMAC de moins vaut mieux qu'un de
+ * plus sur le chemin le plus fréquenté.
+ */
+function verifierLIdentite(req, res, next) {
+  const result = verifyInitDataAny(req.get('X-Telegram-Init-Data'), JETONS);
+  if (!result.ok) {
+    return res.status(401).json({ error: `Authentification refusée : ${result.reason}` });
+  }
+  req.telegramUser = result.user;
+  // Un appel signé, c'est quelqu'un qui a la boutique ouverte à cet instant.
+  // Noté ici plutôt que sur chaque route : il n'y a qu'une porte, et une route
+  // ajoutée demain sera comptée sans qu'on ait à y penser.
+  noterPassage(result.user.id, 'boutique');
+  next();
+}
+
+/**
+ * L'épreuve du chat vaut aussi pour la Mini App.
+ *
+ * Le bouton de menu, en bas à gauche du chat, est posé pour tout le monde d'un
+ * seul geste : Telegram ne sait pas le montrer aux uns et le cacher aux
+ * autres. Quelqu'un qui n'a jamais écrit au bot pouvait donc l'ouvrir et
+ * commander sans avoir rien prouvé — le calcul gardait la conversation, pas la
+ * boutique. Il la garde maintenant des deux côtés, et c'est le serveur qui
+ * refuse : cacher l'écran sans fermer l'API n'aurait retenu personne.
+ *
+ * Trois passe-droits, les mêmes que dans le bot, pour la même raison : un
+ * vendeur, quelqu'un qui a déjà commandé, et une boutique dont le propriétaire
+ * a éteint l'épreuve.
+ */
+async function exigerLaPorte(req, res, next) {
+  try {
+    // La même décision que `/api/porte`, prise par la même fonction. Deux
+    // copies écrites séparément divergent, et le jour où elles divergent
+    // c'est l'écran qui dit « entre » pendant que l'API répond 403.
+    //
+    // Le refus ici, et pas seulement dans la conversation, n'est pas de la
+    // ceinture et des bretelles : le bouton de menu en bas à gauche du chat
+    // ouvre la Mini App pour tout le monde — Telegram ne sait pas le montrer
+    // aux uns et le cacher aux autres. Sans ce contrôle, le péage garderait
+    // la conversation et pas la boutique.
+    const verdict = decisionDEntree(await etatDeLEntree(req.telegramUser?.id));
+    if (verdict.ouverte) return next();
+
+    return res.status(403).json({
+      error: verdict.etape === 'secours'
+        ? 'Écris au bot de secours de la boutique pour entrer.'
+        : 'Réponds au petit calcul dans la conversation du bot pour entrer.',
+      porte: 'fermee',
+      etape: verdict.etape,
+      ...(verdict.lien ? { lien: verdict.lien } : {}),
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * Le contrôle d'entrée complet : l'identité signée, puis la porte.
+ *
+ * Un tableau plutôt qu'une fonction, pour que les routes écrites avant ce
+ * garde-fou en héritent sans changer d'une ligne.
+ */
+const authenticate = [verifierLIdentite, exigerLaPorte];
+
+/**
+ * L'état de la porte, lisible même quand elle est fermée.
+ *
+ * C'est la seule route qui s'arrête à l'identité : la Mini App a besoin de
+ * savoir qu'on lui demande un calcul, et de voir l'instant où il est fait pour
+ * lever le voile toute seule. Elle ne dit rien d'autre que ouvert ou fermé.
+ */
+app.get('/api/porte', verifierLIdentite, async (req, res, next) => {
+  try {
+    const etat = await etatDeLEntree(req.telegramUser?.id);
+    return res.json(decisionDEntree(etat));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * Réunit ce qu'il faut savoir d'un client pour décider s'il entre.
+ *
+ * Les lectures sont ordonnées du moins cher au plus cher, et coupées dès que
+ * la réponse ne dépend plus de la suite : demander le lien du bot de secours
+ * à quelqu'un qui a déjà commandé ne sert à rien, et c'est le genre d'appel
+ * qui finit par coûter un aller-retour réseau sur chaque requête.
+ */
+async function etatDeLEntree(id) {
+  const features = (await getSettings()).features;
+  const calculExige = Boolean(features.botCaptcha);
+  const secoursExige = secoursConfigure() && Boolean(features.porteSecours);
+  const socle = { calculExige, secoursExige, admin: false, client: false, inscrit: false, calculPasse: false };
+  if (!calculExige && !secoursExige) return socle;
+
+  if (await estAdmin(id)) return { ...socle, admin: true };
+
+  const client = (await listOrders({ userId: id, limit: 1 })).length > 0;
+  if (client) {
+    // Un ancien client garde sa porte ouverte pour de bon : sans cette note,
+    // le calcul lui serait redemandé à chaque visite par le bot, qui ne lit
+    // pas ses commandes aussi souvent que la boutique.
+    if (calculExige) await ouvrirLaPorte(id);
+    return { ...socle, client: true };
+  }
+
+  const inscrit = secoursExige ? await estInscritAuSecours(id) : false;
+  // `porte` : ce lien-là part du voile de la Mini App, où la boutique attend
+  // déjà ouverte derrière le client. Le bot de secours lui répondra donc d'y
+  // retourner, et non d'aller chercher l'autre conversation.
+  const lien = secoursExige && !inscrit ? await lienDuSecours('porte').catch(() => '') : '';
+  const calculPasse = calculExige ? await estPasse(id) : false;
+  return { ...socle, inscrit, lien, calculPasse };
+}
+
+/**
+ * La langue du client, partagée entre la boutique et le bot.
+ *
+ * Sans cet endroit commun, le client choisit l'italien dans la boutique et
+ * reçoit ses messages en français : il recommence, ça ne tient toujours pas,
+ * et il conclut que le réglage ne marche pas.
+ *
+ * La lecture rend aussi d'où vient la langue. « choisie » veut dire qu'il a
+ * tranché lui-même, et c'est ce qui permet à la boutique de ne pas lui
+ * reposer la question à chaque ouverture.
+ */
+app.get('/api/langue', verifierLIdentite, async (req, res, next) => {
+  try {
+    return res.json(await langueDe(req.telegramUser.id, req.telegramUser.language_code));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.put('/api/langue', verifierLIdentite, async (req, res, next) => {
+  try {
+    const code = await choisirLaLangue(req.telegramUser.id, req.body?.code);
+    // Une langue qu'on ne parle pas n'est pas une panne du serveur : c'est
+    // une demande à laquelle on ne peut pas répondre, et on le dit.
+    if (!code) throw new HttpError(400, 'Cette langue n\'est pas au catalogue de la boutique.');
+    return res.json({ code, source: 'choisie' });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * La porte de secours, telle que la boutique doit la montrer.
+ *
+ * Trois choses, et rien de plus : est-ce qu'il y en a une, où elle est, et
+ * est-ce que celui qui demande l'a déjà enregistrée. Le troisième point est
+ * tout l'intérêt de la route — c'est lui qui décide si la boutique doit
+ * insister ou se taire.
+ *
+ * Pas de liste, pas de compte : ce sont les affaires du vendeur, et elles
+ * sont dans l'espace admin. Une route publique qui dirait « 412 clients
+ * enregistrés » renseignerait surtout qui n'a rien à y faire.
+ */
+app.get('/api/secours', verifierLIdentite, async (req, res, next) => {
+  try {
+    if (!secoursConfigure()) return res.json({ disponible: false });
+    // Même raison : la carte qui porte ce lien vit dans le profil de la
+    // Mini App, pas dans une conversation.
+    const lien = await lienDuSecours('porte');
+    // Sans nom de bot, pas de lien : afficher une carte qui ne mène nulle
+    // part serait pire que ne rien afficher, parce qu'elle serait touchée.
+    if (!lien) return res.json({ disponible: false });
+    return res.json({
+      disponible: true,
+      lien,
+      inscrit: await estInscritAuSecours(req.telegramUser.id),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * Traduit un panier client en lignes de commande sûres.
+ *
+ * Les prix sont recalculés à partir du catalogue : ceux envoyés par le client
+ * sont ignorés, sinon n'importe qui commanderait à 0 €. Sert à la commande
+ * comme à l'aperçu de remise, pour que les deux voient exactement le même
+ * panier.
+ */
+async function resolveItems(items) {
+  if (!Array.isArray(items) || items.length === 0) throw new HttpError(400, 'Panier vide.');
+  if (items.length > 50) throw new HttpError(400, 'Trop de lignes dans le panier.');
+
+  const resolved = [];
+  let units = 0;
+  for (const item of items) {
+    const product = await getProduct(item.id, { includeHidden: false });
+    if (!product) throw new HttpError(400, `Produit indisponible : ${item.id}`);
+
+    // `Number([2])` vaut 2 : sans ce filtre, un tableau passait pour une
+    // quantité valide. On n'accepte qu'un nombre, ou la chaîne d'un nombre.
+    const brut = item?.quantity;
+    const quantity =
+      typeof brut === 'number' || (typeof brut === 'string' && brut.trim() !== '') ? Number(brut) : NaN;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+      throw new HttpError(400, `Quantité invalide pour ${product.name}.`);
+    }
+
+    const variant = product.variants?.find((v) => v.id === item.variantId) ?? null;
+    if (product.variants?.length && !variant) {
+      throw new HttpError(400, `Format invalide pour ${product.name}.`);
+    }
+
+    units += quantity;
+    const unitPrice = priceOf(product, variant?.id);
+    resolved.push({
+      id: product.id,
+      name: product.name,
+      variantId: variant?.id ?? null,
+      variantLabel: variant?.label ?? null,
+      unitPrice,
+      quantity,
+      lineTotal: unitPrice * quantity,
+    });
+  }
+  return { resolved, units };
+}
+
+/**
+ * Refuse un compte que le vendeur a bloqué.
+ *
+ * Le contrôle ne vivait que sur la route des commandes. Il manquait donc
+ * partout ailleurs : un compte bloqué pour abus pouvait encore publier un avis
+ * sur les fiches produits, s'inscrire aux alertes de retour en stock — et donc
+ * continuer de recevoir des messages du bot — et sonder les codes promo.
+ * Bloquer quelqu'un doit le bloquer pour de bon ; un seul oubli suffit à faire
+ * de ce bouton une décoration.
+ */
+function refuserSiBloque(settings, userId, quoi = 'faire ça') {
+  if (!isBlocked(settings, userId)) return;
+  throw new HttpError(403, `Ce compte ne peut pas ${quoi}. Écris-nous si c'est une erreur.`);
+}
+
+app.post('/api/orders', authenticate, async (req, res, next) => {
+  try {
+    const { items, contact, address: adresseRecue, note, mode, promoCode, postalCode, slotId } = req.body ?? {};
+    const settings = await getSettings();
+
+    refuserSiBloque(settings, req.telegramUser.id, 'passer commande');
+
+    // L'épreuve ne vaut que si elle est exigée ici : côté client seul, elle
+    // ne serait qu'un décor qu'on contourne en sautant l'écran.
+    if (settings.captcha.enabled && !passIsValid(req.get('X-Shop-Pass'), req.telegramUser.id)) {
+      throw new HttpError(403, 'CAPTCHA_REQUIS');
+    }
+
+    // Fermée, la boutique refuse les commandes : le bandeau côté client ne
+    // suffirait pas, on peut garder l'app ouverte et valider plus tard.
+    if (!isOpenNow(settings.opening).open) {
+      throw new HttpError(503, settings.opening.message);
+    }
+
+    if (settings.verification.enabled) {
+      const verification = await getVerification(req.telegramUser.id);
+      if (!isApproved(verification)) {
+        throw new HttpError(403, 'VERIFICATION_REQUISE');
+      }
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new HttpError(400, 'Panier vide.');
+    }
+
+    const { resolved, units } = await resolveItems(items);
+
+    // Retrait ou livraison : le mode décide des frais et de l'adresse exigée.
+    const fulfillment = settings.fulfillment;
+    const chosen = mode === 'delivery' || mode === 'pickup' ? mode : fulfillment.pickup ? 'pickup' : 'delivery';
+    if (!fulfillment[chosen]) {
+      throw new HttpError(400, chosen === 'delivery' ? "La livraison n'est pas proposée." : "Le retrait n'est pas proposé.");
+    }
+
+    // « contact » ne porte plus que le téléphone : l'adresse arrive découpée,
+    // parce qu'un livreur a besoin d'une ville et d'un code postal, pas d'une
+    // ligne libre où « chez Marc » suffisait à passer.
+    const telephone = typeof contact === 'string' ? contact.trim().slice(0, 200) : '';
+
+    let adresse = null;
+    if (chosen === 'delivery') {
+      if (adresseRecue && typeof adresseRecue === 'object') {
+        adresse = normalizeAddress(adresseRecue);
+        const manque = adresseIncomplete(adresse);
+        if (manque) throw new HttpError(400, manque);
+      } else if (telephone.length < 5) {
+        // Une Mini App restée en cache envoie encore l'adresse en une ligne :
+        // on la prend telle quelle plutôt que de refuser une vraie commande.
+        throw new HttpError(400, 'Indique une adresse de livraison.');
+      }
+    }
+
+    // Zone de livraison : tant qu'aucune n'est déclarée, on livre partout aux
+    // conditions générales. Dès qu'il y en a une, le code postal doit tomber
+    // dedans — sinon la commande part vers une adresse qu'on ne dessert pas.
+    // Le code postal de l'adresse fait foi : deux champs pour la même chose se
+    // contrediraient un jour, et c'est celui-là que le client vient d'écrire.
+    const codePostal = adresse?.postalCode || postalCode;
+
+    let zone = null;
+    if (chosen === 'delivery' && settings.features.zones && settings.zones.length) {
+      zone = findZone(settings.zones, codePostal);
+      if (!zone) {
+        throw new HttpError(
+          400,
+          codePostal
+            ? `On ne livre pas encore le ${String(codePostal).trim()}. Retrait sur place, ou écris-nous.`
+            : 'Indique ton code postal pour la livraison.'
+        );
+      }
+    }
+
+    if (settings.features.limits && units > settings.limits.unitsPerOrder) {
+      throw new HttpError(
+        400,
+        `Commande trop grosse : ${settings.limits.unitsPerOrder} articles au maximum. Contacte-nous pour une commande en gros.`
+      );
+    }
+
+    // Les montants sont recalculés ici, jamais repris du client : frais de
+    // livraison, franco et minimum compris.
+    const subtotal = resolved.reduce((sum, i) => sum + i.lineTotal, 0);
+
+    // Une zone lointaine peut exiger un panier plus gros et facturer plus cher
+    // que la boutique : ses valeurs priment, celles laissées vides retombent
+    // sur les conditions générales.
+    const minimum = zone?.minimumOrder ?? fulfillment.minimumOrder;
+    if (subtotal < minimum) {
+      throw new HttpError(
+        400,
+        `Commande minimum${zone ? ` pour ${zone.name}` : ''} : ${(minimum / 100).toFixed(2)} €. ` +
+          `Il manque ${((minimum - subtotal) / 100).toFixed(2)} €.`
+      );
+    }
+
+    // Remise : le code saisi ou le palier automatique, le meilleur des deux.
+    // Un code refusé fait échouer la commande plutôt que de passer en silence
+    // au prix fort — le client l'a tapé, il doit savoir pourquoi il ne prend pas.
+    // `reserve` prend la place du code dans la même opération que sa
+    // vérification : contrôler puis consommer plus tard laissait huit
+    // commandes simultanées emporter le même code à usage unique.
+    const remise = await bestDiscount({
+      code: settings.features.promos ? promoCode : null,
+      subtotal,
+      userId: req.telegramUser.id,
+      tiers: settings.features.tiers ? settings.discounts.tiers : [],
+      reserve: true,
+    });
+
+    // Minimum et franco se jugent sur le panier AVANT remise : sinon un code
+    // ferait repasser la commande sous le minimum qu'elle venait d'atteindre,
+    // et un franco gagné se perdrait en saisissant un code.
+    const franco = zone ? zone.freeFrom ?? fulfillment.freeDeliveryFrom : fulfillment.freeDeliveryFrom;
+    const francoAtteint = franco !== null && subtotal >= franco;
+    const tarif = zone ? zone.fee : fulfillment.deliveryFee;
+    const deliveryFee = chosen === 'delivery' && !francoAtteint ? tarif : 0;
+
+    // Créneau : revalidé contre la liste que la boutique proposerait à cet
+    // instant. Une page restée ouverte toute la nuit ne peut donc pas réserver
+    // un créneau d'hier, et un créneau complet est refusé plutôt que surbooké.
+    let slot = null;
+    let capaciteCreneau = 0;
+    if (settings.slots.enabled) {
+      const options = { timezone: settings.opening.hours.timezone };
+      const found = findSlot(settings.slots, slotId, options);
+      if (!found) {
+        throw new HttpError(400, "Choisis un créneau — celui-ci n'est plus proposé.");
+      }
+      // La capacité est vérifiée au moment d'écrire, pas ici : compter avant
+      // laissait passer toute une rafale de commandes simultanées.
+      slot = { id: found.id, date: found.date, from: found.from, to: found.to, label: slotLabel(found) };
+      capaciteCreneau = found.capacity;
+    }
+
+    // Réservation tout-ou-rien : deux clients ne peuvent pas emporter
+    // le dernier article en même temps.
+    let remaining;
+    try {
+      remaining = await reserveStock(resolved);
+    } catch (err) {
+      // Le code était déjà pris : le rendre, sinon il reste grillé par une
+      // commande qui n'a jamais existé.
+      if (remise.code) await releasePromo(remise.code, req.telegramUser.id).catch(() => {});
+      throw err;
+    }
+
+    let order;
+    try {
+      order = await createOrder({
+        user: req.telegramUser,
+        items: resolved,
+        mode: chosen,
+        subtotal,
+        discount: remise.discount,
+        discountLabel: remise.label,
+        promoCode: remise.code,
+        deliveryFee,
+        total: subtotal - remise.discount + deliveryFee,
+        slot,
+        zone: zone ? { id: zone.id, name: zone.name, postalCode: String(codePostal).trim() } : null,
+        address: adresse,
+        phone: telephone || null,
+        // Une ligne lisible d'un coup d'œil, pour tout ce qui affiche déjà un
+        // contact : la carte de commande, l'export, le fil du client.
+        contact:
+          [adresse ? adresseEnClair(adresse, ' · ') : '', telephone].filter(Boolean).join(' · ') || null,
+        note: typeof note === 'string' ? note.slice(0, 500) : null,
+        // Ce qui se compte sur les commandes est vérifié au moment d'écrire.
+        guards: {
+          maxPerHour: settings.features.limits ? settings.limits.ordersPerHour : 0,
+          slot: slot ? { id: slot.id, capacity: capaciteCreneau, label: slot.label } : null,
+        },
+      });
+    } catch (err) {
+      // La commande n'a pas pu être écrite : on ne garde ni le stock réservé
+      // ni le code consommé.
+      await restoreStock(resolved).catch(() => {});
+      if (remise.code) await releasePromo(remise.code, req.telegramUser.id).catch(() => {});
+      throw err;
+    }
+
+    // Le vendeur découvrait ses ruptures en lisant une commande : on prévient
+    // dès que le seuil est franchi, pas au prochain coup d'œil au tableau.
+    const basses = settings.features.stockAlerts
+      ? remaining.filter((r) => r.left <= settings.alerts.lowStock)
+      : [];
+    if (basses.length) notifyLowStock(basses).catch(() => {});
+
+    // Le vendeur est prévenu quoi qu'il arrive : c'est lui qui prépare la
+    // commande. Seul le fil du client est optionnel.
+    notifyAdmin(order).catch(() => {});
+    if (settings.features.clientNotifications) {
+      notifyOrderPlaced(order).catch((err) =>
+        console.warn('Confirmation client impossible :', err.message)
+      );
+    }
+
+    res.status(201).json({
+      reference: order.reference,
+      mode: order.mode,
+      subtotal: order.subtotal,
+      discount: order.discount,
+      discountLabel: order.discountLabel,
+      promoCode: order.promoCode,
+      deliveryFee: order.deliveryFee,
+      total: order.total,
+      slot: order.slot,
+      zone: order.zone,
+      // Ce que la boutique a retenu de l'adresse : le client doit pouvoir
+      // relire ce qui a été enregistré, pas seulement ce qu'il a tapé.
+      address: order.address,
+      phone: order.phone,
+      contact: order.contact,
+      items: order.items,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/orders', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.orderHistory) return res.json([]);
+    res.json(await listOrders({ userId: req.telegramUser.id, limit: 10 }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Avis ────────────────────────────────────────────────── */
+
+/**
+ * Les avis d'un produit, lisibles par tout le monde.
+ *
+ * Ouverte sans authentification, comme le catalogue : un avis est écrit pour
+ * être lu, et le cacher derrière une signature reviendrait à ne l'afficher qu'à
+ * ceux qui ont déjà la boutique ouverte.
+ */
+app.get('/api/avis/:productId', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.avis) return res.json({ avis: [], resume: null });
+
+    const [liste, resume] = await Promise.all([
+      avisDuProduit(req.params.productId),
+      notesDuCatalogue(),
+    ]);
+    res.json({
+      // Le prénom seul, et seulement si le client a signé : un avis est public,
+      // et personne n'a signé pour que sa page Telegram le soit avec. Le pseudo
+      // et l'identifiant Telegram ne sortent jamais d'ici, signé ou pas.
+      avis: liste.map((a) => ({
+        id: a.id,
+        note: a.note,
+        texte: a.texte,
+        prenom: nomPublic(a),
+        createdAt: a.createdAt,
+        reponse: a.reponse,
+      })),
+      resume: resume[req.params.productId] ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Les commandes qui attendent encore un avis.
+ *
+ * C'est la suggestion : le client ouvre la boutique, et la boutique sait qu'il
+ * a reçu quelque chose la semaine dernière sans rien en dire. On ne la fait
+ * porter qu'aux commandes vraiment notables — reçues, pas annulées, pas déjà
+ * notées — pour qu'un client qui n'a rien à dire ne la voie jamais deux fois.
+ */
+app.get('/api/avis', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.avis) return res.json({ aDonner: [] });
+
+    const commandes = await listOrders({ userId: req.telegramUser.id, limit: 20 });
+    const notables = commandes.filter((o) => refusDAvis(o) === null);
+
+    const dejaDits = await Promise.all(
+      notables.map((o) => avisDeLaCommande(o.reference, req.telegramUser.id))
+    );
+
+    const aDonner = notables
+      .map((o, rang) => ({ commande: o, avis: dejaDits[rang] }))
+      // On propose ce qui n'a rien reçu, et aussi ce qui n'a reçu qu'une note
+      // sans un mot : c'est le cas d'une étoile touchée dans la conversation du
+      // bot. Sans ça, ce geste d'une seconde fermait la porte au commentaire.
+      .filter(({ avis }) => !avis || !avis.texte)
+      .map(({ commande, avis }) => ({
+        reference: commande.reference,
+        createdAt: commande.createdAt,
+        produits: commande.items.map((i) => ({
+          id: i.id, nom: i.name, variante: i.variantLabel ?? null,
+        })),
+        // Ce qu'il avait déjà mis, pour rouvrir l'écran dessus plutôt que sur
+        // cinq étoiles vides qui lui feraient croire que son geste s'est perdu.
+        deja: avis ? { notes: avis.notes, anonyme: avis.anonyme } : null,
+      }));
+
+    res.json({ aDonner });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Dépose l'avis d'une commande. La commande décide de tout : voir avis.js. */
+app.post('/api/avis', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.avis) throw new HttpError(403, 'Les avis sont désactivés.');
+    // Un compte bloqué pour abus publiait encore sur les fiches produits :
+    // c'est exactement ce que bloquer doit empêcher.
+    refuserSiBloque(settings, req.telegramUser.id, 'donner un avis');
+
+    const reference = String(req.body?.reference ?? '');
+    const order = await getOrder(reference);
+
+    // La commande doit être la sienne. Sans ce contrôle, il suffirait de
+    // connaître une référence — et elles s'affichent dans la conversation.
+    if (!order || String(order.user?.id) !== String(req.telegramUser.id)) {
+      throw new HttpError(404, 'Commande introuvable.');
+    }
+
+    const refus = refusDAvis(order);
+    if (refus) throw new HttpError(409, refus);
+
+    const neufs = await deposerAvis({
+      order,
+      notes: req.body?.notes,
+      texte: req.body?.texte,
+      anonyme: req.body?.anonyme,
+      user: req.telegramUser,
+    });
+
+    notifyNouvelAvis(order, neufs).catch(() => {});
+    res.status(201).json({ deposes: neufs.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Le battement de la boutique ouverte.
+ *
+ * Sans lui, quelqu'un qui lit une fiche produit pendant cinq minutes
+ * disparaîtrait de la liste des présents : la porte d'entrée ne compte que les
+ * appels, et lire n'en fait aucun. La réponse est volontairement vide — c'est
+ * le passage par `authenticate` qui fait tout le travail.
+ */
+app.post('/api/presence', authenticate, (req, res) => res.status(204).end());
+
+/* ── Profil ──────────────────────────────────────────────── */
+
+/**
+ * Tout ce que l'onglet Profil affiche, en un seul appel.
+ *
+ * Commandes, favoris et préférences arrivent ensemble : trois allers-retours
+ * pour ouvrir un écran, c'est trois occasions de l'afficher à moitié rempli sur
+ * un réseau de téléphone. Les favoris sont rendus avec le produit complet —
+ * l'écran a besoin du nom, du prix et de la photo, pas d'un identifiant.
+ */
+app.get('/api/profil', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    const [commandes, favoris, preferences, { products }] = await Promise.all([
+      settings.features.orderHistory ? listOrders({ userId: req.telegramUser.id, limit: 20 }) : [],
+      settings.features.favoris ? favorisDe(req.telegramUser.id) : [],
+      preferencesDe(req.telegramUser.id),
+      getCatalog(),
+    ]);
+
+    const parId = new Map(products.map((p) => [p.id, p]));
+    res.json({
+      commandes,
+      // Un favori dont le produit a disparu du catalogue n'est pas une erreur :
+      // c'est un article retiré ou masqué. On le laisse tomber ici plutôt que
+      // d'afficher une carte vide que personne ne saurait quoi faire.
+      favoris: favoris.map((id) => parId.get(id)).filter(Boolean),
+      preferences,
+      canaux: CANAUX,
+      // Le client doit savoir qu'il s'est coupé lui-même du bot : sinon il
+      // bascule ses deux interrupteurs sans comprendre pourquoi rien n'arrive.
+      desabonne: await estDesabonne(req.telegramUser.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Ce que le client accepte de recevoir. Les canaux inconnus sont ignorés. */
+app.put('/api/profil/preferences', authenticate, async (req, res, next) => {
+  try {
+    res.json(await enregistrerPreferences(req.telegramUser.id, req.body ?? {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Met ou retire un produit des favoris.
+ *
+ * Une seule route pour les deux sens : le cœur d'une fiche bascule, il ne
+ * connaît pas son état avant d'être touché.
+ */
+app.post('/api/favoris', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.favoris) throw new HttpError(403, 'Les favoris sont désactivés.');
+    refuserSiBloque(settings, req.telegramUser.id, 'utiliser les favoris');
+
+    const produit = await getProduct(req.body?.id, { includeHidden: false });
+    if (!produit) throw new HttpError(400, 'Produit indisponible.');
+
+    res.json(await basculerFavori(req.telegramUser.id, produit.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Les identifiants seuls : de quoi peindre les cœurs de la grille. */
+app.get('/api/favoris', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.favoris) return res.json({ favoris: [], max: FAVORIS_MAX });
+    res.json({ favoris: await favorisDe(req.telegramUser.id), max: FAVORIS_MAX });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Créneaux ────────────────────────────────────────────── */
+
+/**
+ * Les créneaux encore réservables, avec les places qui restent.
+ *
+ * Ouverte sans authentification, comme le catalogue : c'est un horaire
+ * d'ouverture, pas une donnée personnelle. Un créneau complet reste dans la
+ * liste, marqué comme tel — le faire disparaître donnerait l'impression d'un
+ * bug à qui l'avait vu une minute plus tôt.
+ */
+app.get('/api/slots', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.slots.enabled) return res.json({ enabled: false, slots: [] });
+
+    const counts = await slotCounts();
+    const slots = availableSlots(settings.slots, {
+      timezone: settings.opening.hours.timezone,
+    }).map((slot) => {
+      const taken = counts.get(slot.id) ?? 0;
+      return {
+        id: slot.id,
+        date: slot.date,
+        from: slot.from,
+        to: slot.to,
+        label: slotLabel(slot),
+        left: Math.max(0, slot.capacity - taken),
+        full: taken >= slot.capacity,
+      };
+    });
+
+    res.json({ enabled: true, slots });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Aperçu d'une remise ─────────────────────────────────── */
+
+/**
+ * Dit au client ce que son panier coûterait avec un code, sans rien
+ * consommer.
+ *
+ * Le calcul est refait ici avec les prix du catalogue : l'aperçu affiché dans
+ * le panier ne peut donc pas mentir sur le total que la commande appliquera.
+ */
+app.post('/api/promo', authenticate, async (req, res, next) => {
+  try {
+    const { items, code } = req.body ?? {};
+    const settings = await getSettings();
+    refuserSiBloque(settings, req.telegramUser.id, 'utiliser un code');
+    if (code && !settings.features.promos) {
+      throw new HttpError(400, 'Les codes promo ne sont pas actifs en ce moment.');
+    }
+    const { resolved } = await resolveItems(items);
+    const subtotal = resolved.reduce((sum, i) => sum + i.lineTotal, 0);
+
+    const remise = await bestDiscount({
+      code,
+      subtotal,
+      userId: req.telegramUser.id,
+      tiers: settings.features.tiers ? settings.discounts.tiers : [],
+    });
+
+    res.json({
+      subtotal,
+      discount: remise.discount,
+      label: remise.label,
+      code: remise.code,
+      source: remise.source,
+      total: subtotal - remise.discount,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Liste d'attente sur les ruptures ────────────────────── */
+
+app.post('/api/waitlist', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.waitlist) {
+      throw new HttpError(403, "La liste d'attente n'est pas activée.");
+    }
+    // Sans ça, un compte bloqué s'inscrivait aux alertes de retour en stock et
+    // continuait donc de recevoir des messages du bot.
+    refuserSiBloque(settings, req.telegramUser.id, "s'inscrire à la liste d'attente");
+
+    const { id, variantId } = req.body ?? {};
+    const product = await getProduct(id, { includeHidden: false });
+    if (!product) throw new HttpError(400, 'Produit indisponible.');
+
+    const variant = product.variants?.find((v) => v.id === variantId) ?? null;
+    if (product.variants?.length && !variant) throw new HttpError(400, 'Format invalide.');
+
+    // S'inscrire sur un article disponible n'aurait pas de sens : on le dit
+    // plutôt que d'enregistrer une attente qui ne se déclenchera jamais.
+    const available = variant ? Number(variant.stock ?? 0) : Number(product.stock ?? 0);
+    if (available > 0) throw new HttpError(400, "Cet article est disponible : pas besoin d'attendre.");
+
+    const key = waitlistKey(product.id, variant?.id ?? null);
+    const count = await subscribe(key, req.telegramUser.id);
+    res.status(201).json({ ok: true, waiting: count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/waitlist', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.waitlist) return res.json({ subscribed: false });
+
+    const key = waitlistKey(req.query.id, req.query.variantId || null);
+    res.json({ subscribed: await isSubscribed(key, req.telegramUser.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Photos de produits ──────────────────────────────────── */
+
+/**
+ * Sert la photo d'un produit depuis Telegram.
+ *
+ * Le catalogue ne stocke que la référence Telegram : cette route va chercher
+ * le fichier, en garde une copie locale (voir `media-cache.js`) et laisse le
+ * navigateur la garder à son tour. L'URL porte un paramètre de version, changé
+ * à chaque nouvelle photo, ce qui permet un cache long sans jamais servir
+ * l'ancienne image.
+ */
+/**
+ * Un morceau de la playlist, relayé depuis Telegram.
+ *
+ * Même chemin que les photos et les vidéos : `servirMedia` transmet les
+ * requêtes par plage et les réponses 206, garde une copie locale et laisse le
+ * navigateur la garder à son tour. Les plages comptent plus ici qu'ailleurs —
+ * un lecteur audio en réclame pour démarrer avant la fin du téléchargement et
+ * pour se déplacer dans le morceau.
+ *
+ * L'interrupteur est vérifié ici et pas seulement dans l'affichage : masquer
+ * une pastille ne ferme aucune porte, l'URL resterait appelable.
+ */
+app.get('/api/musique/:id', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.musique) return res.status(404).json({ error: 'Musique désactivée.' });
+
+    const morceau = morceauParId(settings.musique, req.params.id);
+    if (!morceau) return res.status(404).json({ error: 'Morceau introuvable.' });
+
+    await servirMedia(req, res, { fileId: morceau.fileId, kind: 'audio' });
+  } catch (err) {
+    // Un lecteur audio ferme la connexion dès qu'il a de quoi jouer, et
+    // chaque changement de morceau en abandonne une : ce n'est pas une panne.
+    if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
+    console.error('Morceau indisponible :', err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Morceau indisponible.' });
+    else next(err);
+  }
+});
+
+app.get('/api/photo/:id', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.photos) return res.status(404).json({ error: 'Photos désactivées.' });
+
+    const product = await getProduct(req.params.id);
+    if (!product?.photoFileId) return res.status(404).json({ error: 'Pas de photo pour ce produit.' });
+
+    await servirMedia(req, res, { fileId: product.photoFileId, kind: 'photo' });
+  } catch (err) {
+    if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
+    console.error('Photo produit indisponible :', err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Photo indisponible.' });
+    else next(err);
+  }
+});
+
+/**
+ * Sert un média de la galerie d'un produit.
+ *
+ * Même chemin que la photo. La vidéo se diffuse en flux plutôt qu'en un bloc —
+ * charger vingt mégaoctets en mémoire avant d'envoyer le premier octet ferait
+ * tousser un petit VPS et attendre le client — et les en-têtes de plage sont
+ * répercutées : sans elles, impossible de se déplacer dans la vidéo, le
+ * lecteur ne sait que la rejouer depuis le début.
+ */
+/**
+ * Sert la vignette d'une vidéo : la petite image que Telegram fabrique pour
+ * elle, affichée en `poster` le temps que la vidéo arrive.
+ *
+ * Quelques kilo-octets contre quelques mégaoctets : c'est ce qui fait la
+ * différence entre une carte vide et une carte qui montre tout de suite ce
+ * qu'elle a à montrer.
+ */
+app.get('/api/media/:id/:index/apercu', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.photos) return res.status(404).json({ error: 'Médias désactivés.' });
+
+    const product = await getProduct(req.params.id);
+    const media = product?.media?.[Number(req.params.index)];
+    if (!media?.thumbFileId) return res.status(404).json({ error: 'Pas de vignette pour ce média.' });
+
+    await servirMedia(req, res, { fileId: media.thumbFileId, kind: 'photo' });
+  } catch (err) {
+    if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
+    console.error('Vignette de média indisponible :', err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Vignette indisponible.' });
+    else next(err);
+  }
+});
+
+app.get('/api/media/:id/:index', async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.features.photos) return res.status(404).json({ error: 'Médias désactivés.' });
+
+    const product = await getProduct(req.params.id);
+    const media = product?.media?.[Number(req.params.index)];
+    if (!media) return res.status(404).json({ error: 'Média introuvable.' });
+
+    // Un média hébergé ailleurs n'a pas à passer par nous.
+    if (!media.fileId) return res.redirect(302, media.url);
+
+    await servirMedia(req, res, media);
+  } catch (err) {
+    // Une coupure du client en pleine vidéo est normale : ce n'est pas un
+    // incident à consigner, et la réponse est déjà partie.
+    if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' || res.writableEnded) return;
+    console.error('Média produit indisponible :', err.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Média indisponible.' });
+    else next(err);
+  }
+});
+
+/* ── Ce que le client a le droit de savoir sur lui-même ──── */
+
+app.get('/api/me', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    const verification = await getVerification(req.telegramUser.id);
+    res.json({
+      id: req.telegramUser.id,
+      blocked: isBlocked(settings, req.telegramUser.id),
+      verification: {
+        required: settings.verification.enabled,
+        status: verification.status,
+        requestedAt: verification.requestedAt ?? null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Épreuve d'entrée ────────────────────────────────────── */
+
+app.get('/api/captcha', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.captcha.enabled) return res.json({ required: false });
+    res.json({ required: true, ...buildChallenge(req.telegramUser.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/captcha', authenticate, async (req, res, next) => {
+  try {
+    const settings = await getSettings();
+    if (!settings.captcha.enabled) return res.json({ ok: true, pass: null });
+
+    const result = solveChallenge(req.telegramUser.id, req.body ?? {});
+    if (!result.ok) return res.status(400).json({ error: result.reason });
+    res.json({ ok: true, pass: result.pass });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Administration ──────────────────────────────────────── */
+
+app.use('/api/admin', adminRouter);
+
+/* ── Webhook Telegram ────────────────────────────────────── */
+
+// En serverless, aucun process ne vit assez longtemps pour interroger
+// Telegram en boucle : c'est Telegram qui appelle cette route. Le jeton
+// secret voyage dans l'en-tête X-Telegram-Bot-Api-Secret-Token, grammY le
+// vérifie et rejette tout appel qui ne vient pas de Telegram.
+//
+// Les deux modes de réception s'excluent, et grammY le fait respecter
+// durement : `webhookCallback()` remplace `bot.start` par une fonction qui
+// lève une erreur — dès l'appel, sans attendre la moindre requête. Monter
+// cette route sur un VPS suffisait donc à empêcher le long polling de
+// démarrer : le bot restait muet et seule une ligne de journal le disait,
+// alors que la boutique, elle, continuait de servir. C'est le mode de
+// lancement qui décide, donc, et non la présence d'un secret dans l'environnement.
+if (!standalone && config.webhookSecret) {
+  app.post('/api/telegram', webhookCallback(bot, 'express', { secretToken: config.webhookSecret }));
+} else {
+  const pourquoi = standalone
+    ? 'Cette boutique reçoit les mises à jour en long polling : le webhook n\'est pas servi ici.'
+    : 'TELEGRAM_WEBHOOK_SECRET non défini.';
+  app.post('/api/telegram', (req, res) => res.status(503).json({ error: pourquoi }));
+}
+
+/* ── Gestion d'erreurs ───────────────────────────────────── */
+
+app.use((err, req, res, next) => {
+  if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+
+  // Corps illisible ou trop gros : c'est la requête qui est fautive, pas le
+  // serveur. Sans ce cas, `express.json()` remontait ici et tout devenait un
+  // 500 — le client lisait « erreur interne » pour un JSON mal fermé, et
+  // chaque requête malformée écrivait une trace d'incident dans les journaux.
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Requête trop volumineuse.' });
+  }
+  if (err instanceof SyntaxError || err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON invalide.' });
+  }
+  // Tout ce qui porte déjà un statut de requête le garde : le perdre
+  // transformerait un refus explicite en panne.
+  if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ error: err.expose ? err.message : 'Requête refusée.' });
+  }
+
+  // Une panne de stockage n'est pas un bogue : c'est une installation à
+  // corriger, et son message dit comment. Le taire derrière « Erreur
+  // interne » oblige le vendeur à aller lire les journaux — quand il sait
+  // qu'ils existent.
+  if (err.fichier || ['EACCES', 'EPERM', 'EROFS', 'ENOSPC'].includes(err.code)) {
+    console.error('Stockage inaccessible :', err.message);
+    return res.status(503).json({
+      error: `Les données de la boutique sont inaccessibles.\n\n${err.message}`,
+    });
+  }
+
+  console.error('Erreur serveur :', err);
+  res.status(500).json({ error: 'Erreur interne.' });
+});
+
+/* ── Démarrage ───────────────────────────────────────────── */
+
+// Importé (Vercel), le module se contente d'exporter l'application : pas de
+// port à écouter, pas de long polling à lancer.
+export { app };
+export default app;
+
+if (standalone) {
+  // Le magasin fichier n'appartient qu'à un processus : deux instances sur le
+  // même dossier s'effacent l'une l'autre, sans le moindre message.
+  try {
+    claimDataDir?.();
+  } catch (err) {
+    console.error(`\n  ${err.message}\n`);
+    process.exit(1);
+  }
+
+  // Une base injoignable ne se découvre pas requête par requête : on le dit
+  // au lancement, là où le vendeur regarde quand il installe.
+  if (config.databaseUrl) {
+    getCatalog()
+      .then((c) => console.log(`  Base de données joignable (${c.products.length} produits).`))
+      .catch((err) => {
+        console.error(`\n  ⚠ La base de données ne répond pas — la boutique ne pourra rien servir.\n`);
+        console.error(`  ${err.message}\n`);
+      });
+  }
+
+  const serveur = app.listen(config.port, config.host, async () => {
+    console.log(`  Boutique servie sur http://${config.host}:${config.port}`);
+    if (config.webappUrl) console.log(`  URL publique déclarée : ${config.webappUrl}`);
+    console.log(`  Stockage : ${storageKind}`);
+    // Les deux sources, distinguées : voir « 3 admins » au démarrage quand le
+    // .env n'en déclare qu'un, c'est précisément ce qu'on veut remarquer.
+    // L'entretien quotidien : sauvegarde, puis oubli des vieilles adresses.
+    // Seulement ici, dans le mode où un processus vit en permanence. En
+    // serverless il n'y a personne entre deux requêtes pour tenir une
+    // minuterie — elle s'y tairait sans rien dire, ce qui est pire que de ne
+    // pas exister.
+    const entretien = await getSettings().then((s) => s.entretien ?? {}).catch(() => ({}));
+    demarrerLEntretien({ envoyer: sendFileToAdmin });
+    console.log(
+      `  Entretien quotidien : sauvegarde ${entretien.sauvegardeAuto === false ? 'éteinte' : 'allumée'}` +
+        `, oubli ${entretien.oubliAuto === true ? `après ${entretien.oubliJours ?? 30} jours` : 'éteint'}`
+    );
+
+    const ajoutes = (await listerAdmins().catch(() => [])).filter((a) => a.source === 'bot');
+    console.log(
+      `  Admins autorisés : ${config.adminIds.join(', ') || 'aucun'}` +
+        (ajoutes.length ? ` (+ ${ajoutes.map((a) => a.id).join(', ')} ajoutés depuis le bot)` : '')
+    );
+    // Une boutique sans administrateur se gère depuis nulle part : ni produits,
+    // ni stocks, ni commandes. Autant le dire au démarrage plutôt que de le
+    // laisser découvrir par un /admin qui refuse.
+    if (config.adminIds.length === 0) {
+      console.warn('  ⚠ Aucun administrateur : /admin refusera tout le monde et rien ne sera gérable.');
+      console.warn('    Renseigne ADMIN_IDS dans .env (envoie /start au bot pour connaître ton identifiant).');
+    }
+  });
+
+  // Sans ça, un port déjà pris remonte en « Unhandled 'error' event » : dix
+  // lignes de trace de pile qui nomment node:net et pas la boutique, alors
+  // que la cause est presque toujours la même — une autre boutique, ou une
+  // ancienne instance restée en vie. On le dit, avec le moyen de le voir et
+  // celui de le corriger.
+  serveur.on('error', (err) => {
+    if (err.code !== 'EADDRINUSE') throw err;
+    const source = process.env.PORT
+      ? 'PORT, lu dans ton .env'
+      : "la valeur par défaut — ni .env ni ligne PORT n'ont été trouvés";
+    console.error(`\n  ✖ Le port ${config.port} est déjà pris.\n`);
+    console.error(`  Ce port vient de ${source}.\n`);
+    console.error('  Deux causes, presque toujours :\n');
+    console.error('    1. Un autre programme écoute déjà dessus — souvent');
+    console.error('       une seconde boutique. Deux boutiques sur la même');
+    console.error('       machine ont besoin de deux ports distincts ET de');
+    console.error('       deux dossiers séparés : mets PORT=3300 dans le .env');
+    console.error("       de celle-ci si l'autre occupe déjà 3000.\n");
+    console.error('    2. Une instance précédente tourne encore.');
+    console.error(`       Pour voir qui :   ss -lptn 'sport = :${config.port}'`);
+    console.error('       Pour la couper :  kill <le PID affiché>\n');
+    process.exit(1);
+  });
+
+  // Un secret de webhook traînant dans l'environnement n'empêche plus rien,
+  // mais il trahit presque toujours une configuration copiée d'un déploiement
+  // serverless : autant le dire, sinon on cherchera longtemps pourquoi le
+  // webhook n'est pas servi.
+  if (config.webhookSecret) {
+    console.log('  TELEGRAM_WEBHOOK_SECRET est défini mais ignoré : ce mode lit en long polling.');
+  }
+
+  // Un token invalide ne doit pas empêcher de servir la boutique : on garde
+  // le site en ligne et on signale le problème plutôt que de tuer le process.
+  //
+  // Le `try` n'est pas décoratif : `bot.start` peut lever de façon synchrone,
+  // et un `.catch()` seul ne rattrape pas ça. Le process mourait alors au
+  // démarrage — donc, sous systemd et son `Restart=always`, redémarrait en
+  // boucle toutes les cinq secondes, boutique comprise. Une panne de bot ne
+  // doit jamais coûter la boutique.
+  const signaler = (err) => {
+    console.error(`  Bot non démarré (${err.message}). La boutique reste accessible.`);
+    // Le 409 a une cause précise et un remède d'une ligne : le nommer ici
+    // épargne une heure de recherche à qui voit son bot rester muet.
+    if (/409|conflict/i.test(err.message)) {
+      console.error('  Un webhook est déclaré chez Telegram : il capte les mises à jour à la place du long polling.');
+      console.error('  Remède : node tools/set-webhook.mjs --delete, puis redémarre la boutique.');
+    }
+  };
+
+  try {
+    bot
+      .start({
+        onStart: (me) => {
+          console.log(`  Bot @${me.username} démarré.`);
+          // Le bouton en bas à gauche du chat ouvre la boutique. On le
+          // (re)pose au démarrage pour qu'il suive toujours WEBAPP_URL, et on
+          // ne meurt pas si Telegram refuse : c'est un confort, pas la boutique.
+          configurerMenu()
+            .then((m) =>
+              console.log(
+                m.type === 'web_app'
+                  ? '  Bouton de menu : ouvre la boutique.'
+                  : '  Bouton de menu : par défaut (WEBAPP_URL absente ou non HTTPS).'
+              )
+            )
+            .catch((err) => console.warn(`  Bouton de menu non réglé : ${err.message}`));
+          // Le menu « / » : vide pour les clients, garni pour le vendeur.
+          configurerLesCommandes()
+            .then((r) =>
+              console.log(
+                `  Menu des commandes : caché aux clients, posé pour ${r.poses}/${r.patrons} admin(s).`
+              )
+            )
+            .catch((err) => console.warn(`  Menu des commandes non réglé : ${err.message}`));
+        },
+      })
+      .catch(signaler);
+  } catch (err) {
+    signaler(err);
+  }
+
+  /* ── La seconde porte ──────────────────────────────────────
+     Elle tourne en même temps que la première, jamais à sa place. Un bot
+     de secours qui n'existerait qu'à partir de la panne serait un numéro
+     que personne n'a dans son répertoire : Telegram interdit à un bot
+     d'écrire le premier à qui ne l'a jamais démarré, si bien que le
+     registre des joignables ne se remplit que pendant que tout va bien. */
+  if (botSecours) {
+    try {
+      botSecours
+        .start({
+          onStart: (me) => {
+            console.log(`  Bot de secours @${me.username} démarré.`);
+            configurerLesCommandesDuSecours().catch(() => {});
+          },
+        })
+        .catch((err) =>
+          console.error(`  Bot de secours non démarré (${err.message}). Le principal n'est pas touché.`)
+        );
+    } catch (err) {
+      console.error(`  Bot de secours non démarré (${err.message}). Le principal n'est pas touché.`);
+    }
+
+    veille = creerLaVeille({
+      portes: { principal: bot.api, secours: botSecours.api },
+      // Le vendeur est prévenu par le bot encore debout. Le principal
+      // d'abord — c'est là qu'il lit d'habitude — et le secours s'il ne
+      // répond plus, ce qui est justement le cas qui déclenche l'annonce.
+      prevenirVendeur: async (texte) => {
+        if (!adminAPrevenir()) return;
+        try {
+          await bot.api.sendMessage(adminAPrevenir(), texte);
+        } catch {
+          await botSecours.api.sendMessage(adminAPrevenir(), texte).catch(() => {});
+        }
+      },
+      prevenirClients: (texte, liste) => prevenirLesInscrits(texte, { destinataires: liste }),
+    });
+    veille.demarrer();
+  }
+  resumeDuSecours().then((ligne) => console.log(`  ${ligne}`)).catch(() => {});
+
+  // Arrêt propre : sans ça, le long polling garde le process en vie.
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => {
+      veille?.arreter();
+      bot.stop();
+      botSecours?.stop().catch(() => {});
+    });
+  }
+}

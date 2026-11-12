@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0b0d14">
+<title>Original68 — Boutique</title>
+<!-- L'enseigne de la maison. Le PNG servi fait 192 px : le logo
+     s'affiche à 34, et même sur un écran à trois fois la densité
+     cela laisse de la marge. Le 512 est dans le dossier pour la
+     photo de profil du bot, il n'est pas chargé par la page. -->
+<link rel="icon" href="/assets/ui/logo.png">
+<link rel="apple-touch-icon" href="/assets/ui/logo.png">
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/original68.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+<!-- ══ Décor : l'affiche de la maison, fixe derrière tout ══
+     Une couche à part plutôt qu'un fond de page : `background-attachment:
+     fixed` est ignoré par les WebView iOS, et l'image défilerait avec la
+     liste. Assombrie par la feuille de style, sinon le texte posé dessus
+     ne se lirait pas. -->
+<div class="fond" aria-hidden="true"></div>
+
+<!-- ══ Ouverture : le temps que le catalogue arrive ══ -->
+<div class="charge" id="charge">
+  <div class="charge__tete">
+    <p class="devise">Une vraie connexion, pour être branché à vie</p>
+    <img class="logo-rond" src="/assets/ui/logo.png" alt="" width="132" height="132">
+  </div>
+  <div class="charge__texte-zone">
+    <!-- Le journal : chaque étape passée reste écrite, cochée, au-dessus
+         de celle en cours. C'est ce qui prouve que ça avance. -->
+    <ul class="charge__journal" id="chargeJournal" aria-hidden="true"></ul>
+    <p class="charge__texte" id="chargeTexte">Ouverture de la boutique…</p>
+    <p class="charge__pct" aria-hidden="true">
+      <span id="chargeLibelle">Chargement…</span> <span id="chargePct">0 %</span>
+    </p>
+    <div class="charge__jauge" aria-hidden="true"><span></span></div>
+  </div>
+</div>
+
+<!-- ══ L'accueil ══ ═════════════════════════════════════════════
+     Le premier écran après le film. Il dit qui on est, à qui on parle, et
+     il demande la seule chose qu'on ne peut pas deviner : la langue.
+
+     Il paraît à chaque visite : c'est l'enseigne de la boutique. La
+     question de la langue, elle, ne se pose qu'une fois — reposée
+     chaque fois, elle deviendrait un péage. Qui a déjà répondu ne voit
+     que le message, et retrouve le réglage dans son profil.
+
+     Son vrai rôle est ailleurs, et il est technique : l'appui sur une
+     langue — ou sur « Entrer » — est un geste du client DANS la page,
+     et c'est exactement ce que le navigateur exige pour autoriser un
+     son. La musique démarre donc là, et elle démarre pour de bon — pas
+     « si le navigateur veut bien ». -->
+<div class="bienvenue" id="bienvenue" hidden role="dialog" aria-modal="true"
+     aria-labelledby="bienvenueEnseigne">
+  <div class="bienvenue__carte">
+    <h2 class="bienvenue__enseigne" id="bienvenueEnseigne">Original68</h2>
+    <p class="devise">Une vraie connexion, pour être branché à vie</p>
+    <img class="bienvenue__logo logo-rond" src="/assets/ui/logo.png" alt="" width="104" height="104">
+    <!-- Le barman accueille : son nom en tête du panneau, son portrait
+         dessous, comme sur la maquette de la maison. -->
+    <p class="bienvenue__barman-nom">Le Barman :</p>
+    <p class="bienvenue__salut" id="bienvenueSalut"></p>
+    <p class="bienvenue__texte" id="bienvenueTexte"></p>
+    <img class="bienvenue__barman" src="/assets/ui/barman.jpg" alt="" width="357" height="359" decoding="async">
+
+    <!-- Les deux informations qu'on vient chercher : quand, et comment.
+         En pastilles plutôt qu'au bout de la phrase, où elles se lisaient
+         comme une incise.
+
+         Les icônes sont dessinées ici, et non posées en émoji : un émoji
+         est rendu par la police du système, et « 🛵 » n'a pas le même
+         dessin — parfois pas la même taille — sur un Android, un iPhone
+         et un bureau. Deux traits en SVG sont les mêmes partout, et
+         prennent la couleur du texte. -->
+    <div class="bienvenue__infos">
+      <span class="bienvenue__info">
+        <svg class="bienvenue__info-icone" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <path d="M12 7.2V12l3.2 1.9" fill="none" stroke="currentColor" stroke-width="1.7"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <b id="bienvenueHoraires"></b>
+      </span>
+      <span class="bienvenue__info">
+        <svg class="bienvenue__info-icone" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="6" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <circle cx="18.5" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <path d="M9 17h6.5M6 17l3-8h3.2l3.4 8M9.6 9H8a1.6 1.6 0 0 1 0-3.2h3.4"
+                fill="none" stroke="currentColor" stroke-width="1.7"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span id="bienvenueService"></span>
+      </span>
+    </div>
+
+    <div class="bienvenue__langues" id="bienvenueLangues">
+      <p class="bienvenue__legende" id="bienvenueLegende"></p>
+      <div class="bienvenue__choix" id="bienvenueChoix" role="group"></div>
+    </div>
+
+    <button class="btn btn--primary btn--block bienvenue__entrer" id="bienvenueEntrer" type="button"></button>
+  </div>
+</div>
+
+<!-- ══ La porte du bot ══
+     Deux marches derrière un seul voile : écrire au bot de secours, puis
+     répondre au calcul. Les `data-t` ci-dessous sont ceux de la seconde ;
+     le script les remplace par ceux de la première quand c'est elle qui
+     attend. Un seul écran plutôt que deux, parce que c'est une seule porte
+     — et parce qu'un second voile aurait sa propre traduction à tenir. -->
+<div class="gate" id="porte" hidden>
+  <div class="gate__card">
+    <p class="gate__eyebrow" id="porteEntree" data-t="porte.entree">Entrée</p>
+    <!-- « Étape 1 sur 2 ». Affiché seulement quand il y a vraiment deux
+         marches : découvrir la seconde en revenant de la première, c'est se
+         voir déplacer le but, et c'est là qu'on abandonne. `aria-live` parce
+         que le voile ne se recharge pas entre les deux — seul son texte
+         change, et sans ça une synthèse vocale ne dirait rien du passage. -->
+    <p class="gate__marches" id="porteMarches" aria-live="polite" hidden></p>
+    <h2 class="gate__title goldtext" id="porteTitre" data-t="porte.titre">Un calcul, et c'est ouvert</h2>
+    <p class="gate__text" id="porteTexte" data-t="porte.texte">
+      Retourne dans la conversation du bot : il t'y pose une petite addition.
+      Réponds-y, puis reviens — la boutique s'ouvre toute seule.
+    </p>
+    <p class="gate__fine" id="porteFine" data-t="porte.fine">
+      C'est demandé une seule fois, pour éviter les faux comptes. Aucune
+      information supplémentaire ne t'est demandée.
+    </p>
+    <button class="btn btn--primary btn--grow" id="porteAction" type="button" data-t="porte.ouvrir">Ouvrir la conversation</button>
+    <button class="gate__link" id="porteRetry" type="button" data-t="porte.reessayer">J'ai répondu — réessayer</button>
+  </div>
+</div>
+
+<!-- ══ Téléphone uniquement ══ ═══════════════════════════════
+     Posé avant le contrôle d'âge : inutile de demander son âge à
+     quelqu'un à qui l'on va refuser l'entrée de toute façon. -->
+<div class="agegate" id="mobilegate" hidden>
+  <div class="agegate__card">
+    <span class="agegate__seal" aria-hidden="true">📱</span>
+    <h1 class="agegate__title goldtext">Sur ton téléphone</h1>
+    <p class="agegate__text">
+      La boutique s'ouvre depuis <strong>Telegram sur Android ou iPhone</strong>.
+      Sur ordinateur, elle reste fermée.
+    </p>
+    <p class="agegate__legal">
+      Reprends la conversation du bot depuis ton téléphone et rouvre la
+      boutique : tu retrouveras tes favoris et tes commandes, ils sont liés à
+      ton compte Telegram, pas à l'appareil.
+    </p>
+  </div>
+</div>
+
+<!-- ══ Contrôle d'âge ══ -->
+<div class="agegate" id="agegate" hidden>
+  <div class="agegate__card">
+    <span class="agegate__seal" aria-hidden="true">18+</span>
+    <h1 class="agegate__title goldtext" data-t="age.titre">Stop !</h1>
+    <p class="agegate__text" data-t-html="age.texte">
+      Cette boutique est réservée aux personnes majeures.
+      Tu confirmes avoir <strong>18&nbsp;ans ou plus</strong>&nbsp;?
+    </p>
+    <div class="agegate__actions">
+      <button class="btn btn--primary" id="ageYes" type="button" data-t="age.oui">Oui, j'ai 18 ans</button>
+      <button class="btn btn--ghost" id="ageNo" type="button" data-t="age.non">Non</button>
+    </div>
+    <p class="agegate__legal" id="legalNotice"></p>
+  </div>
+</div>
+
+<!-- ══ Épreuve d'entrée ══ -->
+<div class="gate" id="captcha" hidden>
+  <div class="gate__card">
+    <p class="gate__eyebrow" data-t="tuiles.entete">Vérification</p>
+    <h2 class="gate__title goldtext" id="captchaPrompt" data-t="tuiles.consigne">Remets la pièce à sa place</h2>
+    <p class="gate__text" data-t="tuiles.texte">Une seconde, le temps de vérifier que tu n'es pas un robot.</p>
+
+    <!-- Le plateau. Le fond est l'image, le trou et la pièce sont dessinés
+         par-dessus en JavaScript : une image découpée côté serveur aurait
+         demandé une bibliothèque d'images sur le VPS, et une épreuve d'entrée
+         qui dépend d'un binaire absent est une boutique fermée. -->
+    <div class="puzzle" id="puzzlePlateau">
+      <img class="puzzle__fond" id="puzzleFond" alt="" draggable="false">
+      <span class="puzzle__trou" id="puzzleTrou" aria-hidden="true"></span>
+      <!-- La pièce est un bouton : elle se prend au doigt, à la souris, et
+           aux flèches du clavier pour qui ne peut pas glisser. -->
+      <button class="puzzle__piece" id="puzzlePiece" type="button"
+              aria-describedby="captchaPrompt" data-t-aria="tuiles.pieceAria"></button>
+    </div>
+    <p class="gate__fine" id="puzzleAide" data-t="tuiles.aide"></p>
+
+    <p class="gate__error" id="captchaError" hidden></p>
+    <button class="btn btn--primary btn--grow" id="captchaSubmit" type="button" disabled data-t="tuiles.valider">Valider</button>
+  </div>
+</div>
+
+<!-- ══ Vérification d'identité ══ -->
+<div class="gate" id="verification" hidden>
+  <div class="gate__card">
+    <p class="gate__eyebrow" data-t="verif.entete">Accès contrôlé</p>
+    <h2 class="gate__title goldtext" id="verifTitle" data-t="verif.titre">Vérification requise</h2>
+    <p class="gate__text" id="verifText"></p>
+    <p class="gate__fine" data-t="verif.fine">
+      La boutique n'enregistre pas ton document : il reste dans la conversation
+      Telegram, et tu peux le supprimer une fois la vérification faite.
+    </p>
+    <button class="btn btn--primary btn--grow" id="verifAction" type="button" data-t="verif.ouvrir">Ouvrir la conversation</button>
+    <button class="gate__link" id="verifBrowse" type="button" data-t="verif.attendre">Regarder la boutique en attendant</button>
+  </div>
+</div>
+
+<!-- ══ En-tête ══ -->
+<header class="topbar">
+  <div class="topbar__brand">
+    <!-- L'enseigne et ses étincelles. Les trois éclairs sont des frères du
+         logo, pas ses enfants : posés dedans, ils seraient rognés par le
+         cercle. Le conteneur leur sert de repère, et ils débordent. -->
+    <span class="enseigne">
+      <img src="/assets/ui/logo.png" alt="" class="enseigne__logo">
+    </span>
+    <span class="topbar__bloc">
+      <span class="topbar__name goldtext" id="shopName">Original68</span>
+      <span class="topbar__sous" id="shopSous"></span>
+    </span>
+  </div>
+  <div class="topbar__actions">
+    <!-- La loupe reste dans la page pour le code qui la cite, mais ne se
+         montre plus : la recherche est toujours ouverte, sous l'en-tête. -->
+    <button class="findbtn" id="findBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button>
+    <button class="rond" id="sonBtn" type="button" hidden aria-pressed="false"
+            aria-label="Musique" data-t-aria="son.basculer"><span aria-hidden="true">🔊</span></button>
+    <button class="rond" id="panierBtn" type="button"
+            aria-label="Ouvrir le panier" data-t-aria="panier.ouvrir">
+      <span aria-hidden="true">🛒</span><span class="rond__compte" id="panierCompte" hidden></span>
+    </button>
+  </div>
+  <!-- La recherche, toujours ouverte, sur toute la largeur. -->
+  <div class="find" id="findBar">
+    <div class="find__box">
+      <span class="find__icon" aria-hidden="true">🔎</span>
+      <input id="findInput" type="search" autocomplete="off" placeholder="Rechercher un produit…" data-t-placeholder="catalogue.rechercher"
+             aria-label="Chercher un produit" data-t-aria="catalogue.rechercher">
+      <button class="find__clear" id="findClear" type="button" aria-label="Effacer la recherche" data-t-aria="aria.effacer" hidden>✕</button>
+    </div>
+    <select id="findSort" hidden aria-hidden="true" tabindex="-1">
+      <option value="default">default</option>
+    </select>
+  </div>
+</header>
+
+<p class="closed" id="closedBanner" hidden></p>
+
+<!-- État de la boutique, avec le décompte jusqu'au prochain basculement. -->
+<div class="statut" id="statutBar" hidden>
+  <span class="statut__pastille" aria-hidden="true"></span>
+  <span class="statut__texte" id="statutTexte"></span>
+  <span class="statut__compte" id="statutCompte"></span>
+</div>
+
+<main class="page">
+
+<!-- ══ Vue « Filtres » : la recherche et la grille ══ -->
+<section class="vue" id="vueCatalogue" role="tabpanel" aria-label="Catalogue" data-t-aria="onglet.catalogue">
+
+  <!-- ══ La vitrine ══ ════════════════════════════════════════
+       « Bienvenue », les rayons en tuiles, et le bandeau promo. Les
+       tuiles sont les catégories de la boutique ; « Promos » s'y ajoute
+       seule dès qu'un produit est en promo. -->
+  <section class="vitrine">
+    <h2 class="vitrine__titre" data-t="vitrine.bienvenue">Bienvenue</h2>
+    <nav class="tuiles" id="cats" aria-label="Catégories" data-t-aria="onglet.categories"></nav>
+    <div class="promo" id="promoBandeau" hidden>
+      <p class="promo__titre" id="promoTitre"></p>
+      <button class="promo__btn" id="promoVoir" type="button"><span data-t="promo.voir">Voir les offres</span> →</button>
+    </div>
+  </section>
+
+  <!-- ══ « Comment c'était ? » ══ ══════════════════════════════
+       La suggestion d'avis. Elle ne s'adresse qu'à qui a reçu
+       quelque chose et n'en a rien dit : c'est le seul moment où
+       la question a un sens, et elle disparaît une fois posée. -->
+  <button class="reprise reprise--avis" id="suggestionAvis" type="button" hidden>
+    <span class="reprise__icone" aria-hidden="true">⭐</span>
+    <span class="reprise__texte">
+      <b data-t="avis.commentCetait">Comment c'était ?</b>
+      <span id="suggestionAvisDetail"></span>
+    </span>
+    <span class="reprise__fleche" aria-hidden="true">›</span>
+  </button>
+
+  <div class="rayon-tete">
+    <h2 class="rayon-tete__titre" id="gridTitre" data-t="vitrine.tous">Tous les produits</h2>
+    <span class="rayon-tete__compte" id="gridCompte"></span>
+  </div>
+
+  <!-- ══ Grille produits ══ -->
+  <section class="grid" id="grid" aria-live="polite"></section>
+
+  <p class="empty" id="empty" hidden>Rien dans cette catégorie pour le moment.</p>
+
+  <!-- Le pied de page ne porte plus que l'éclair, comme marque de fin de
+       catalogue. La mention légale qui s'y trouvait reste sur l'écran
+       d'âge, où elle a un sens : on la lit avant d'entrer, pas après avoir
+       fait défiler treize produits. -->
+  <footer class="foot">
+    <img src="/assets/ui/logo.png" alt="" class="foot__eclair" width="44" height="44">
+  </footer>
+</section>
+
+<!-- ══ Page « Fiche produit » ══ ════════════════════════════════
+     Une page, pas un panneau qui remonte du bas. Une fiche porte une
+     galerie, une description, des formats, des avis et deux carrousels :
+     tout ça dans une feuille qui laisse voir le catalogue derrière se
+     lisait à travers un hublot. Elle prend l'écran, et on en revient par
+     la flèche — ou par le bouton retour de Telegram, qui fait la même
+     chose sans qu'on ait à viser. -->
+<section class="vue vue--produit" id="vueProduit" role="tabpanel" aria-label="Fiche produit" data-t-aria="aria.fiche" hidden>
+  <button class="pretour" id="pRetour" type="button">
+    <span class="pretour__fleche" aria-hidden="true">‹</span>
+    <span id="pRetourTexte" data-t="catalogue.retour">Retour</span>
+  </button>
+
+  <div class="pdetail__art">
+    <img id="pImage" src="" alt="">
+    <!-- La galerie prend la place de l'image dès qu'un produit en a une. -->
+    <div class="galerie" id="pGallery" hidden>
+      <div class="galerie__piste" id="pGalleryTrack"></div>
+      <button class="galerie__fleche galerie__fleche--gauche" id="pGalleryPrev"
+              type="button" aria-label="Média précédent" data-t-aria="aria.mediaPrec" hidden>‹</button>
+      <button class="galerie__fleche galerie__fleche--droite" id="pGalleryNext"
+              type="button" aria-label="Média suivant" data-t-aria="aria.mediaSuiv" hidden>›</button>
+      <div class="galerie__points" id="pGalleryDots" role="tablist" aria-label="Médias" data-t-aria="aria.medias"></div>
+    </div>
+  </div>
+
+  <div class="pdetail__body">
+    <div class="pdetail__tags" id="pTags"></div>
+    <button class="pdetail__coeur" id="pCoeur" type="button" aria-pressed="false" hidden>♥</button>
+    <h2 class="pdetail__name goldtext" id="pName"></h2>
+    <!-- La note, juste sous le nom : c'est là qu'on la cherche. -->
+    <button class="note note--lien" id="pNote" type="button" hidden></button>
+    <!-- Les caractéristiques : ce qu'on lit en diagonale avant la description. -->
+    <ul class="points" id="pPoints" hidden></ul>
+    <!-- Une <div> et non un <p> : la description peut contenir une liste,
+         et un <p> ne peut pas en contenir — le navigateur la refermerait
+         tout seul avant, en sortant la liste du bloc. -->
+    <div class="pdetail__desc" id="pDesc"></div>
+    <p class="variants__titre" id="pVariantsTitre" hidden data-t="produit.format">Choisis ton format</p>
+    <div class="variants" id="pVariants"></div>
+
+    <!-- Ce que les autres en ont dit. -->
+    <section class="avis" id="pAvis" hidden>
+      <h3 class="avis__titre" id="pAvisTitre" data-t="avis.titre">Avis</h3>
+      <div class="avis__barres" id="pAvisBarres"></div>
+      <ul class="avis__liste" id="pAvisListe"></ul>
+      <button class="btn btn--ghost btn--block" id="pAvisPlus" type="button" hidden>
+        <span data-t="avis.voirTous">Voir tous les avis</span>
+      </button>
+    </section>
+
+    <!-- Les deux carrousels : ce qui se vend à côté, et ce qui plaît à ceux
+         qui aiment celui-ci. Chargés depuis le catalogue déjà en mémoire —
+         une suggestion ne vaut pas un aller-retour de plus. -->
+    <section class="suite" id="pMemeCategorie" hidden>
+      <h3 class="suite__titre" id="pMemeCategorieTitre" data-t="produit.memeCategorie">Même catégorie</h3>
+      <div class="suite__piste" id="pMemeCategoriePiste"></div>
+    </section>
+
+    <section class="suite" id="pAimerAussi" hidden>
+      <h3 class="suite__titre" data-t="produit.aimerAussi">Tu vas aimer aussi</h3>
+      <div class="suite__piste" id="pAimerAussiPiste"></div>
+    </section>
+  </div>
+
+</section>
+
+<!-- ══ Vue « Catégories » : le catalogue rangé, rayon par rayon ══
+     La grille de l'autre onglet répond à « je cherche ça » ; celle-ci
+     répond à « montre-moi ce que tu as ». Deux questions différentes,
+     deux écrans — les mêmes produits. -->
+<section class="vue" id="vueCategories" role="tabpanel" aria-label="Catégories" data-t-aria="onglet.categories" hidden>
+  <div class="rayons" id="rayons"></div>
+  <p class="empty" id="rayonsVide" hidden data-t="catalogue.videTotal">Le catalogue est vide pour le moment.</p>
+</section>
+
+<!-- ══ Vue « Contact » ══ -->
+<section class="vue" id="vueContact" role="tabpanel" aria-label="Contact" data-t-aria="onglet.contact" hidden>
+  <div class="contact">
+    <div class="contact__icone" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.5 9.5 0 0 1-2.6-.4L4 21l1.5-4.3A8.2 8.2 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12.3 3 8.4 8.4 0 0 1 21 11.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+    </div>
+    <h2 class="contact__titre" data-t="contact.titre">Une question ?</h2>
+    <p class="contact__texte" data-t="contact.texte">
+      Un doute sur un produit, une commande qui traîne, une demande
+      particulière : écris-nous sur Snapchat, on répond là-bas.
+    </p>
+
+    <div class="contact__infos" id="contactInfos"></div>
+  </div>
+</section>
+
+<!-- ══ Vue « Favoris » ══ -->
+<section class="vue" id="vueFavoris" role="tabpanel" aria-label="Favoris" data-t-aria="onglet.favoris" hidden>
+  <h2 class="vue__titre" data-t="favoris.titre">Mes favoris</h2>
+  <section class="grid" id="favorisGrille"></section>
+  <p class="empty" id="favorisVide" hidden data-t="favoris.vide">Aucun favori pour l'instant.</p>
+</section>
+
+<!-- ══ Vue « Panier » ══
+     Le panier ne part nulle part : « Commander » montre le récapitulatif
+     à copier et à envoyer sur Snapchat. -->
+<section class="vue" id="vuePanier" role="tabpanel" aria-label="Panier" data-t-aria="onglet.panier" hidden>
+  <h2 class="vue__titre" data-t="panier.titre">Mon panier</h2>
+  <div class="panier" id="panierListe"></div>
+  <div class="panier__vide" id="panierVide" hidden>
+    <p data-t="panier.vide">Ton panier est vide.</p>
+    <button class="btn btn--primary" id="panierVersBoutique" type="button" data-t="panier.voirBoutique">Voir la boutique</button>
+  </div>
+  <!-- ══ La commande, comme sur Napoli ══
+       Le formulaire suit ce que la boutique propose : le mode n'est demandé
+       que si les deux existent, l'adresse que si l'on livre, le créneau que
+       si les créneaux sont allumés, le code que si les codes le sont. Le
+       serveur revérifie tout : ce qui est ici sert à le dire tout de suite. -->
+  <div class="panier__form" id="panierForm" hidden>
+    <div class="field" id="modeField" hidden>
+      <span data-t="commande.mode">Comment tu récupères</span>
+      <div class="modes" id="modes" role="group"></div>
+    </div>
+    <div class="field" id="addressField" hidden>
+      <span data-t="commande.adresse">Adresse de livraison</span>
+      <input id="orderStreet" type="text" maxlength="120" autocomplete="street-address"
+             data-t-placeholder="commande.rue" aria-label="Rue" data-t-aria="commande.rue">
+      <input id="orderComplement" type="text" maxlength="120" autocomplete="address-line2"
+             data-t-placeholder="commande.complement" aria-label="Complément" data-t-aria="commande.complement">
+      <div class="champs-deux">
+        <input id="orderPostal" type="text" inputmode="numeric" maxlength="6" autocomplete="postal-code"
+               data-t-placeholder="commande.codePostal" aria-label="Code postal" data-t-aria="commande.codePostal">
+        <input id="orderCity" type="text" maxlength="60" autocomplete="address-level2"
+               data-t-placeholder="commande.ville" aria-label="Ville" data-t-aria="commande.ville">
+      </div>
+      <p class="promo__status" id="zoneStatus" hidden role="status"></p>
+    </div>
+    <label class="field" id="slotField" hidden>
+      <span id="slotFieldLabel" data-t="commande.creneauRetrait">Créneau de retrait</span>
+      <select id="orderSlot"></select>
+    </label>
+    <label class="field" id="contactField">
+      <span id="contactLabel" data-t="commande.telephone">Téléphone (optionnel)</span>
+      <input id="orderContact" type="tel" maxlength="200" autocomplete="tel" data-t-placeholder="commande.telephoneAide">
+    </label>
+    <div class="field" id="promoField">
+      <span data-t="commande.code">Code promo</span>
+      <div class="code">
+        <input id="promoCode" type="text" maxlength="20" autocomplete="off" spellcheck="false"
+               data-t-placeholder="commande.codeAide" aria-label="Code promo" data-t-aria="commande.code">
+        <button class="btn btn--ghost" id="promoApply" type="button" data-t="commande.appliquer">Appliquer</button>
+      </div>
+      <p class="promo__status" id="promoStatus" hidden role="status"></p>
+    </div>
+    <label class="field" id="noteField">
+      <span data-t="commande.note">Un mot pour la commande ? (optionnel)</span>
+      <textarea id="orderNote" rows="2" maxlength="500" data-t-placeholder="commande.noteAide"></textarea>
+    </label>
+  </div>
+
+  <div class="panier__pied" id="panierPied" hidden>
+    <p class="panier__economie" id="panierEconomie" hidden></p>
+    <dl class="panier__calcul" id="panierCalcul"></dl>
+    <p class="cart__hint" id="cartHint" hidden></p>
+    <p class="panier__total"><span data-t="panier.total">Total</span> <b id="panierTotal"></b></p>
+    <button class="btn btn--primary btn--block" id="panierCommander" type="button" data-t="panier.commander">Commander</button>
+    <button class="panier__vider" id="panierVider" type="button" data-t="panier.vider">Vider le panier</button>
+  </div>
+</section>
+
+<!-- ══ Vue « Profil » ══ -->
+<section class="vue" id="vueProfil" role="tabpanel" aria-label="Mon profil" data-t-aria="profil.titre" hidden>
+  <div class="profil">
+    <div class="profil__tete">
+      <div class="profil__vignette" id="profilVignette" aria-hidden="true"></div>
+      <div class="profil__identite">
+        <p class="profil__nom" id="profilNom" data-t="profil.titre">Mon profil</p>
+        <p class="profil__qui" id="profilQui"></p>
+      </div>
+    </div>
+
+    <div class="chiffres" id="profilChiffres"></div>
+
+    <button class="btn btn--ghost btn--block profil__contact" id="profilContact" type="button" data-t="profil.contact">Une question ? Contact</button>
+
+    <!-- La langue, en tête du profil : c'est le seul réglage de la boutique
+         qui appartienne au client, et le cadre d'accueil ne la demande
+         qu'une fois. Sans cet endroit, changer d'avis voudrait dire vider
+         la mémoire de son navigateur. -->
+    <div class="profil__langue">
+      <p class="profil__langue-titre" id="profilLangueTitre" data-t="profil.langue">Langue</p>
+      <div class="bienvenue__choix" id="profilLangues" role="group"></div>
+      <p class="profil__langue-aide" data-t="profil.langueAide"></p>
+    </div>
+
+    <!-- La porte de secours. Masquée tant que la boutique n'en déclare pas,
+         et masquée aussi une fois enregistrée n'aurait pas de sens : le
+         client doit pouvoir vérifier qu'il l'est. Elle change juste de ton. -->
+    <div class="profil__secours" id="profilSecours" hidden>
+      <p class="profil__langue-titre" data-t="secours.titre">Porte de secours</p>
+      <p class="profil__secours-texte" id="secoursTexte"></p>
+      <a class="btn btn--block profil__secours-lien" id="secoursLien" href="#" target="_blank" rel="noopener"></a>
+    </div>
+
+    <div class="profil__onglets" id="profilOnglets" role="tablist">
+      <button class="profil__onglet" type="button" role="tab" data-vue="commandes" aria-selected="true">
+        <span data-t="profil.commandes">Commandes</span>
+      </button>
+      <button class="profil__onglet" type="button" role="tab" data-vue="favoris" aria-selected="false">
+        <span data-t="profil.favoris">Favoris</span><span class="profil__compte" id="favorisCompte" hidden></span>
+      </button>
+      <button class="profil__onglet" type="button" role="tab" data-vue="alertes" aria-selected="false">
+        <span data-t="profil.alertes">Alertes</span>
+      </button>
+    </div>
+
+    <section class="profil__vue" data-vue="commandes">
+      <div class="orders" id="ordersList"></div>
+      <p class="orders__empty" id="ordersEmpty" hidden></p>
+    </section>
+
+    <section class="profil__vue" data-vue="favoris" hidden>
+      <div class="favoris" id="favorisList"></div>
+      <p class="orders__empty" id="favorisEmpty" hidden></p>
+    </section>
+
+    <section class="profil__vue" data-vue="alertes" hidden>
+      <p class="profil__intro" data-t="profil.alertesIntro">
+        Ce que la boutique peut t'envoyer dans cette conversation.
+        Tu coupes et rallumes quand tu veux.
+      </p>
+      <div class="alertes" id="alertesList"></div>
+      <p class="profil__stop" id="profilStop" data-t-html="profil.stop" hidden>
+        ⚠️ Tu as envoyé <b>/stop</b> au bot : rien ne t'arrivera tant que tu
+        n'auras pas écrit <b>/annonces</b> pour rouvrir la porte.
+      </p>
+    </section>
+  </div>
+</section>
+
+</main>
+
+<!-- ══ La barre du bas ══ ════════════════════════════════════════
+     Quatre onglets plutôt qu'une page qui défile : la boutique avait
+     tout empilé sur un seul écran, si bien que le profil et le contact
+     n'existaient que pour qui savait où appuyer. Ici chaque chose a sa
+     place, et la place se voit. -->
+<!-- ══ La barre d'achat de la fiche produit ══ ══════════════════
+     Hors de la vue, et ce n'est pas un détail de rangement. La vue porte
+     une animation d'entrée qui déplace son contenu ; or un élément qui
+     anime sa transformation devient le repère des positions fixes qu'il
+     contient. La barre se calait donc sur la vue et non sur l'écran :
+     elle flottait cent pixels trop haut et recouvrait la fin de la fiche.
+     Ici elle ne dépend que de la fenêtre. -->
+<!-- La barre de la fiche : on choisit son format et on l'ajoute au panier.
+     Chaque appui en ajoute un ; la quantité se règle ensuite dans le
+     panier, ligne par ligne. -->
+<div class="pbar" id="pbar" hidden>
+  <button class="btn btn--primary btn--grow btn--block" id="commander" type="button">
+<svg class="btn__icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.1 10.2a1.6 1.6 0 0 0 1.6 1.3h8.4a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.4" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.5" fill="currentColor"/><circle cx="17" cy="19.5" r="1.5" fill="currentColor"/></svg>
+    <!-- Le libellé et le prix dans un seul élément. Le bouton est une boîte
+         flexible : un texte nu posé à côté d'une icône y devient un élément
+         anonyme, qui se replie tout seul dès qu'il manque de place. On a vu
+         « Commander », puis un point tout seul sur sa ligne, puis le prix. -->
+    <span class="btn__libelle"><span id="pLibelle" data-t="produit.ajouter">Ajouter au panier</span><span id="pSepare"> · </span><span id="pPrice"></span></span>
+  </button>
+  <!-- Le rappel de retour en stock. Il ne partage JAMAIS la barre avec
+       « Commander » : il prend sa place quand l'article est épuisé, et
+       disparaît dès qu'il y a du stock. Un seul bouton, toujours. -->
+  <button class="btn btn--ghost btn--grow btn--block" id="notifyMe" type="button" hidden>
+    <span id="notifyLibelle" data-t="produit.prevenir">🔔 Préviens-moi du retour</span>
+  </button>
+</div>
+
+<!-- ══ La pastille de musique ══ ═════════════════════════════
+     Posée au-dessus des onglets, à droite, là où le pouce arrive sans
+     couvrir le catalogue. Elle reste cachée tant que le vendeur n'a pas
+     de playlist, ou qu'il a éteint l'interrupteur.
+
+     Le client doit appuyer, et ce n'est pas un choix de design : aucun
+     navigateur ni WebView ne démarre un son sans geste. C'est d'ailleurs
+     ce qui rend la chose honnête — personne ne se fait surprendre par de
+     la musique en ouvrant une boutique.
+
+     `preload="none"` : tant que personne n'appuie, pas un octet d'audio
+     ne part. Un client venu acheter ne paie pas l'ambiance. -->
+<!-- ══ La pastille de langue ══
+
+     Le choix était posé à deux endroits seulement : le cadre d'accueil, qui
+     ne s'affiche qu'une fois, et le profil, à deux touches de là. Un client
+     qui laisse passer le premier et ne pense pas au second reste dans une
+     langue qu'il n'a pas choisie — la boutique avait huit langues que
+     personne ne savait atteindre.
+
+     Elle est donc flottante, comme celle de la musique, et visible partout.
+     Le `<select>` transparent est posé PAR-DESSUS le drapeau : c'est lui qui
+     reçoit l'appui, et le système ouvre sa propre liste. Rien à ouvrir en
+     JavaScript — aucune WebView ne laisse déplier une liste native au clavier
+     ou par script de façon fiable, et une liste refaite à la main perdrait la
+     molette que le client connaît de tous ses autres réglages. -->
+<div class="lpastille" id="lpastille" hidden>
+  <span class="lpastille__drapeau" id="lpastilleDrapeau" aria-hidden="true">🇫🇷</span>
+  <select class="lpastille__liste" id="lpastilleListe" aria-label="Langue" data-t-aria="profil.langue"></select>
+</div>
+
+<button class="juke" id="juke" type="button" hidden
+        aria-label="Ouvrir le lecteur de musique" data-t-aria="juke.ouvrir" aria-expanded="false" aria-controls="jukeMenu">
+  <svg class="juke__icone juke__icone--play" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M8 5.5v13l11-6.5z" fill="currentColor"/>
+  </svg>
+  <svg class="juke__icone juke__icone--pause" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="7" y="5.5" width="3.4" height="13" rx="1" fill="currentColor"/>
+    <rect x="13.6" y="5.5" width="3.4" height="13" rx="1" fill="currentColor"/>
+  </svg>
+  <span class="juke__onde" aria-hidden="true"><i></i><i></i><i></i></span>
+</button>
+<!-- Le lecteur, ouvert par la pastille.
+
+     La pastille seule ne savait que démarrer et arrêter : passer un morceau
+     demandait d'attendre la fin du précédent. Elle ouvre donc un panneau, et
+     c'est là que vivent les commandes.
+
+     Rien ne démarre à l'ouverture du panneau. Un client qui l'ouvre par
+     curiosité n'a pas à se faire surprendre par du son — et c'est aussi ce
+     que le navigateur exige : le geste qui autorise la lecture, c'est
+     l'appui sur « lecture », pas l'appui sur la pastille. -->
+<div class="juke__menu" id="jukeMenu" hidden role="group" aria-label="Lecteur de musique" data-t-aria="juke.menu">
+  <p class="juke__menu-titre" id="jukeMenuTitre" aria-live="polite">—</p>
+  <p class="juke__menu-rang" id="jukeMenuRang"></p>
+  <div class="juke__menu-gestes">
+    <button class="juke__geste" id="jukePrec" type="button" aria-label="Morceau précédent" data-t-aria="juke.precedent">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 5.5v13L8.5 12z" fill="currentColor"/>
+        <rect x="5" y="5.5" width="2.6" height="13" rx="1" fill="currentColor"/>
+      </svg>
+    </button>
+    <button class="juke__geste juke__geste--grand" id="jukeLecture" type="button" aria-label="Lecture" data-t-aria="juke.lecture">
+      <svg class="juke__icone juke__icone--play" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 5.5v13l11-6.5z" fill="currentColor"/>
+      </svg>
+      <svg class="juke__icone juke__icone--pause" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="7" y="5.5" width="3.4" height="13" rx="1" fill="currentColor"/>
+        <rect x="13.6" y="5.5" width="3.4" height="13" rx="1" fill="currentColor"/>
+      </svg>
+    </button>
+    <button class="juke__geste" id="jukeSuiv" type="button" aria-label="Morceau suivant" data-t-aria="juke.suivant">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 5.5v13L15.5 12z" fill="currentColor"/>
+        <rect x="16.4" y="5.5" width="2.6" height="13" rx="1" fill="currentColor"/>
+      </svg>
+    </button>
+  </div>
+</div>
+<!-- Le titre en cours, qui se montre quelques secondes à chaque morceau
+     puis s'efface : savoir ce qu'on écoute est utile, le lire en
+     permanence par-dessus le catalogue ne l'est pas. Il ne paraît que
+     lorsque le panneau est fermé — ouvert, il dit déjà le titre. -->
+<p class="juke__titre" id="jukeTitre" hidden aria-live="polite"></p>
+<audio id="jukeSon" preload="none"></audio>
+
+<nav class="tabbar" id="tabbar" role="tablist" aria-label="Navigation" data-t-aria="aria.navigation">
+  <span class="tabbar__curseur tabbar__curseur--pose" id="tabbarCurseur" aria-hidden="true"></span>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="catalogue" aria-selected="true">
+    <span class="tabbar__emoji" aria-hidden="true">🏠</span>
+    <span data-t="onglet.accueil">Accueil</span>
+  </button>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="categories" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">🛍️</span>
+    <span data-t="onglet.boutique">Boutique</span>
+  </button>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="favoris" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">💚</span>
+    <span data-t="onglet.favoris">Favoris</span>
+    <span class="tabbar__pastille" id="favorisPastille" hidden></span>
+  </button>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="panier" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">🛒</span>
+    <span data-t="onglet.panier">Panier</span>
+    <span class="tabbar__pastille" id="panierPastille" hidden></span>
+  </button>
+  <button class="tabbar__item" type="button" role="tab" data-onglet="profil" aria-selected="false">
+    <span class="tabbar__emoji" aria-hidden="true">👤</span>
+    <span data-t="onglet.compte">Compte</span>
+  </button>
+</nav>
+
+<!-- ══ Donner son avis ══ -->
+<div class="sheet" id="avisSheet" hidden>
+  <div class="sheet__backdrop" data-close></div>
+  <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="avisTitre">
+    <button class="sheet__close" type="button" data-close aria-label="Fermer" data-t-aria="aria.fermer">✕</button>
+    <div class="sheet__scroll">
+      <h2 class="feuille__titre goldtext" id="avisTitre" data-t="avis.tonAvis">Ton avis</h2>
+      <p class="avis__intro" id="avisIntro"></p>
+      <div id="avisProduits"></div>
+      <label class="field">
+        <span class="field__label"><span data-t="avis.unMot">Un mot, si tu veux</span> <span class="avis__facultatif" data-t="avis.facultatif">facultatif</span></span>
+        <textarea id="avisTexte" rows="3" maxlength="600"
+                  placeholder="Ce qui t'a plu, ce qui peut être mieux…"></textarea>
+      </label>
+      <div class="signature" id="avisSignature" role="radiogroup" aria-label="Signer ton avis" data-t-aria="aria.signer">
+        <button class="signature__choix" type="button" data-anonyme="non" aria-pressed="true">
+          <b id="avisSigneNom" data-t="avis.signe">Avec mon prénom</b>
+          <small data-t="avis.signeAide">Un avis signé inspire plus confiance.</small>
+        </button>
+        <button class="signature__choix" type="button" data-anonyme="oui" aria-pressed="false">
+          <b data-t="avis.anonyme">Anonyme</b>
+          <small data-t="avis.anonymeAide">Ton avis s'affiche sans nom.</small>
+        </button>
+      </div>
+      <p class="avis__note-vie" id="avisRappel" data-t="avis.noteVie">
+        Dans les deux cas, ni ton pseudo Telegram, ni ton numéro, ni ton adresse
+        ne sont publiés. Le vendeur, lui, voit toujours quelle commande a été notée.
+      </p>
+    </div>
+    <div class="sheet__bar">
+      <button class="btn btn--ghost" type="button" data-close data-t="avis.plusTard">Plus tard</button>
+      <button class="btn btn--primary btn--grow" id="avisEnvoyer" type="button" data-t="avis.envoyer">Envoyer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Pour commander ══ ══════════════════════════════════════
+     Le bouton « Commander » n'emmène nulle part et ne donne aucune
+     adresse : il indique la marche à suivre, et c'est tout. Le compte
+     du vendeur ne s'affiche pas dans la boutique — il se donne
+     ailleurs, et une boutique ouverte à tous n'est pas l'endroit pour
+     l'afficher. -->
+<div class="sheet" id="commandeSheet" hidden>
+  <div class="sheet__backdrop" data-close></div>
+  <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="commandeTitre">
+    <button class="sheet__close sheet__close--clair" type="button" data-close
+            aria-label="Fermer" data-t-aria="aria.fermer">✕</button>
+    <div class="sheet__scroll">
+      <!-- Le bandeau dit où aller avant même qu'on lise : la couleur porte
+           l'information plus vite que la phrase. -->
+      <div class="commande__bandeau" aria-hidden="true"><span>👻</span></div>
+      <div class="commande__corps">
+        <h2 class="feuille__titre goldtext" id="commandeTitre" data-t="snap.titre">Pour commander</h2>
+        <p class="commande__texte" data-t="snap.texte"></p>
+        <div class="commande__recap" id="commandeRecapZone" hidden>
+          <p class="commande__aide" data-t="panier.recapAide">Copie ce récapitulatif et envoie-le-nous sur Snapchat.</p>
+          <pre class="commande__recap-texte" id="commandeRecap"></pre>
+        </div>
+      </div>
+    </div>
+    <div class="sheet__bar">
+      <button class="btn btn--ghost" id="commandeCopier" type="button" hidden data-t="panier.copier">Copier le récapitulatif</button>
+      <button class="btn btn--primary btn--grow" type="button" data-close data-t="snap.compris">J'ai compris</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Commande enregistrée ══ -->
+<div class="sheet" id="doneSheet" hidden>
+  <div class="sheet__backdrop" data-close></div>
+  <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="doneTitle">
+    <button class="sheet__close" type="button" data-close aria-label="Fermer" data-t-aria="aria.fermer">✕</button>
+    <div class="sheet__scroll">
+      <div class="done">
+        <span class="done__seal" aria-hidden="true">✓</span>
+        <h2 class="done__title goldtext" id="doneTitle" data-t="done.titre">Commande enregistrée</h2>
+        <p class="done__ref" id="doneRef"></p>
+        <p class="done__text" id="doneText"></p>
+        <ul class="done__lines" id="doneLines"></ul>
+        <p class="done__especes" data-t="done.especes">💶 Paiement en espèces, à la remise.</p>
+      </div>
+    </div>
+    <div class="sheet__bar">
+      <button class="btn btn--ghost" id="doneCommandes" type="button" data-t="done.mesCommandes">Mes commandes</button>
+      <button class="btn btn--primary btn--grow" type="button" data-close data-t="done.continuer">Continuer mes achats</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Profil ══ ═══════════════════════════════════════════════
+     Trois sections sous un seul toit : ce qu'il a commandé, ce
+     qu'il garde de côté, et ce qu'il accepte de recevoir. Un
+     onglet par section, parce que dérouler les trois d'un bloc
+     ferait défiler trois écrans pour atteindre un interrupteur. -->
+<div class="toast" id="toast" hidden></div>
+
+<script src="/js/app.js" type="module"></script>
+</body>
+</html>

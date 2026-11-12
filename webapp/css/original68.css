@@ -1,0 +1,521 @@
+/* ══════════════════════════════════════════════════════════════
+   Original68 — l'habillage, d'après la maquette.
+
+   Chargée après style.css, et seulement des surcharges : la mise en page
+   reste celle de Tanja, ce fichier lui change d'habit. La palette, elle,
+   est réécrite à sa place, dans le bloc `:root` de style.css.
+
+   Ce que dit la maquette :
+   - derrière tout, l'affiche (le patron au soleil couchant), assombrie ;
+   - la devise en or, en italique ;
+   - le logo rond, cerclé d'or, avec un halo vert ;
+   - devant, des panneaux de verre vert sombre bordés de vert ;
+   - des boutons verts pleins.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── L'affiche, derrière tout ────────────────────────────────
+   Le dégradé par-dessus fait deux choses : il assombrit l'image pour que le
+   texte se lise, et il fond le bas dans le vert sombre des panneaux. */
+.fond {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(var(--void-rgb) / .55) 0%, rgb(var(--void-rgb) / .62) 45%, rgb(var(--void-rgb) / .86) 100%),
+    url('/assets/ui/fond.jpg') center 30% / cover no-repeat;
+}
+/* Le grain et les lueurs de la ruelle n'ont plus rien à éclairer. */
+body { background-image: none; background-color: var(--night); }
+
+/* ── Le nom, la devise, le logo ──────────────────────────── */
+.devise {
+  margin: 10px 0 0;
+  font-style: italic; font-weight: 600; font-size: 14px;
+  color: var(--jaune);
+  text-shadow: 0 1px 8px rgb(var(--void-rgb) / .9);
+  transform: rotate(-3deg);
+}
+
+.logo-rond {
+  display: block; border-radius: 50%; object-fit: cover;
+  border: 3px solid rgb(var(--jaune-rgb) / .85);
+  box-shadow:
+    0 0 0 1px rgb(var(--ink-rgb) / .6),
+    0 0 26px rgb(var(--neon-rgb) / .55),
+    0 0 60px rgb(var(--neon-rgb) / .25);
+}
+
+/* ── L'écran d'ouverture ─────────────────────────────────── */
+.charge {
+  background:
+    linear-gradient(180deg, rgb(var(--void-rgb) / .35) 0%, rgb(var(--void-rgb) / .45) 50%, rgb(var(--void-rgb) / .9) 100%),
+    url('/assets/ui/fond.jpg') center 30% / cover no-repeat,
+    var(--night);
+}
+/* L'éclair blanc de l'orage de Tanja n'a rien à faire sous ce soleil. */
+.charge::after { display: none; }
+
+.charge__tete {
+  position: absolute; left: 0; right: 0;
+  /* Sans le grand titre, le logo tomberait sur le visage du patron : il
+     descend sur sa poitrine, comme sur la maquette. */
+  top: calc(30vh + var(--safe-top));
+  display: grid; justify-items: center;
+  padding: 0 24px; text-align: center;
+}
+.charge__tete .logo-rond { width: 132px; height: 132px; margin-top: 22px; }
+
+.charge__texte-zone {
+  justify-items: stretch; text-align: start; gap: 8px;
+  padding: 0 24px;
+  bottom: calc(34px + var(--safe-bottom));
+}
+/* Le journal, en caractères de terminal, comme sur la maquette. */
+.charge__journal {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 6px;
+}
+.charge__journal li,
+.charge__texte {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 13.5px; font-weight: 500; letter-spacing: 0;
+  color: rgb(var(--cream-rgb) / .9);
+  text-shadow: 0 1px 6px rgb(var(--void-rgb) / .95);
+}
+.charge__texte::before { content: '⏳ '; }
+.charge__pct {
+  margin: 10px 0 0; text-align: center;
+  font-size: 15px; font-weight: 600; color: var(--jaune);
+}
+/* La jauge : une piste bordée d'or, une barre d'or. */
+.charge__jauge {
+  max-width: none; height: 10px; border-radius: 6px;
+  background: rgb(var(--void-rgb) / .6);
+  border: 1px solid rgb(var(--jaune-rgb) / .45);
+}
+.charge__jauge span {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--gold-lo), var(--jaune));
+  box-shadow: 0 0 10px rgb(var(--jaune-rgb) / .5);
+}
+.charge__jauge span::after { display: none; }
+
+/* ── L'accueil ───────────────────────────────────────────── */
+/* Plein écran et opaque, avec l'affiche : l'accueil passe devant les portes
+   (puzzle, âge), qui ne doivent pas se deviner au travers. */
+.bienvenue {
+  background:
+    linear-gradient(180deg, rgb(var(--void-rgb) / .45) 0%, rgb(var(--void-rgb) / .55) 50%, rgb(var(--void-rgb) / .88) 100%),
+    url('/assets/ui/fond.jpg') center 30% / cover no-repeat,
+    var(--night);
+  backdrop-filter: none;
+  overflow-y: auto;
+  align-items: start;
+  padding-top: calc(7vh + var(--safe-top));
+}
+.bienvenue__carte {
+  max-width: 360px;
+  background: none; border: 0; box-shadow: none;
+  padding: 0;
+  display: grid; justify-items: center;
+}
+/* Le titre de la fenêtre reste pour les lecteurs d'écran, qui ne lisent pas
+   un logo ; à l'écran, c'est le logo rond qui dit le nom. */
+.bienvenue__enseigne {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.bienvenue__logo.logo-rond { width: 104px; height: 104px; margin: 18px auto 18px; border-width: 3px; }
+/* Le message d'accueil, dans le panneau de verre vert de la maquette. */
+.bienvenue__barman-nom,
+.bienvenue__salut,
+.bienvenue__texte,
+.bienvenue__infos,
+.bienvenue__langues { width: 100%; }
+.bienvenue__barman-nom {
+  margin: 0; padding: 14px 18px 0; text-align: start;
+  font-size: 20px; font-weight: 700; color: var(--jaune);
+  background: rgb(var(--panel-rgb) / .82);
+  border: 1px solid rgb(var(--neon-rgb) / .3); border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+}
+.bienvenue__salut {
+  margin: 0; padding: 4px 18px 0; text-align: start;
+  font-size: 17px; color: var(--cream);
+  background: rgb(var(--panel-rgb) / .82);
+  border: 1px solid rgb(var(--neon-rgb) / .3); border-block: 0;
+}
+/* Le portrait du barman, encadré d'or comme sur la maquette. */
+.bienvenue__barman {
+  display: block; width: min(62%, 220px); height: auto; margin: 16px auto 4px;
+  border-radius: 22px;
+  border: 2px solid rgb(var(--jaune-rgb) / .6);
+  box-shadow: 0 0 24px rgb(var(--neon-rgb) / .25), 0 12px 28px rgb(0 0 0 / .5);
+}
+.bienvenue__texte {
+  margin: 0; padding: 6px 18px 16px; text-align: start;
+  background: rgb(var(--panel-rgb) / .82);
+  border: 1px solid rgb(var(--neon-rgb) / .3); border-top: 0;
+  border-radius: 0 0 18px 18px;
+  color: rgb(var(--cream-rgb) / .9);
+}
+
+/* ── Les boutons verts ───────────────────────────────────── */
+.btn--primary {
+  color: var(--ink);
+  background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  border-color: rgb(255 255 255 / .25);
+  border-radius: 16px;
+  font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .5), 0 0 26px rgb(var(--neon-rgb) / .35);
+}
+.btn--primary:active { background: var(--neon-deep); }
+
+/* ── L'en-tête ───────────────────────────────────────────── */
+.topbar {
+  background: rgb(var(--night2-rgb) / .82);
+  border-bottom-color: rgb(var(--neon-rgb) / .18);
+}
+.enseigne__logo {
+  border: 2px solid rgb(var(--jaune-rgb) / .8);
+  box-shadow: 0 0 12px rgb(var(--neon-rgb) / .45);
+}
+/* Le nom n'est pas écrit dans l'en-tête : le logo rond le porte déjà. Il
+   reste dans la page pour les lecteurs d'écran, qui ne lisent pas un logo. */
+.topbar__name {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* ── Le bandeau : la bannière ────────────────────────────── */
+.hero { height: 150px; border-bottom-color: rgb(var(--neon-rgb) / .3); }
+.hero__film { object-position: 50% 40%; }
+.hero__title { color: var(--jaune); font-style: italic; }
+
+/* ── Les panneaux : verre vert sombre ────────────────────── */
+.card {
+  background: rgb(var(--panel-rgb) / .86);
+  border: 1px solid rgb(var(--neon-rgb) / .28);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgb(0 0 0 / .45);
+}
+.card:active { border-color: rgb(var(--neon-rgb) / .7); }
+.cat {
+  background: rgb(var(--panel-rgb) / .8);
+  border-color: rgb(var(--neon-rgb) / .28);
+  border-radius: 14px;
+}
+.find__box input, .find select {
+  background: rgb(var(--panel-rgb) / .85);
+  border-color: rgb(var(--neon-rgb) / .35);
+  border-radius: 22px;
+}
+.tabbar {
+  background: rgb(var(--void-rgb) / .92);
+  border-top-color: rgb(var(--neon-rgb) / .18);
+}
+.pbar { background: rgb(var(--night2-rgb) / .94); }
+
+/* Le pied de page : le logo, petit, à la place de l'éclair. */
+.foot__eclair { width: 44px; height: 44px; border-radius: 50%; opacity: .9; }
+
+/* ══════════════════════════════════════════════════════════════
+   Le catalogue de la maquette : en-tête avec le son et le panier,
+   recherche toujours ouverte, vitrine « Bienvenue » en tuiles, bandeau
+   promo, cartes avec prix et bouton vert, panier, et cinq onglets.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── En-tête : deux ronds à droite, la recherche dessous ───── */
+.topbar { flex-wrap: wrap; row-gap: 10px; }
+.rond {
+  position: relative; flex: none;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; padding: 0;
+  font-size: 19px; line-height: 1;
+  background: rgb(var(--panel-rgb) / .85);
+  border: 1.5px solid rgb(var(--neon-rgb) / .45);
+  box-shadow: 0 0 14px rgb(var(--neon-rgb) / .18);
+}
+.rond:active { transform: scale(.92); }
+.rond__compte {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 800; line-height: 1;
+  color: var(--ink); background: var(--jaune);
+}
+.topbar .find {
+  order: 3; flex: 1 0 100%;
+  padding: 0; animation: none;
+}
+.topbar .find__box input {
+  height: 46px; padding-inline: 42px 38px;
+  font-size: 15px; font-weight: 500;
+  border-radius: 23px;
+}
+.topbar .find__icon { inset-inline-start: 15px; font-size: 16px; }
+.topbar .find__clear { inset-inline-end: 8px; }
+
+/* ── La vitrine : l'affiche plus claire, « Bienvenue », les tuiles ── */
+.vitrine {
+  position: relative;
+  margin: -16px calc(var(--gutter, 14px) * -1) 0;
+  padding: 14px var(--gutter, 14px) 18px;
+  background:
+    linear-gradient(180deg, rgb(var(--void-rgb) / .12) 0%, rgb(var(--void-rgb) / .35) 70%, rgb(var(--void-rgb) / .7) 100%),
+    url('/assets/ui/fond.jpg') center 12% / cover no-repeat;
+  border-bottom: 1px solid rgb(var(--neon-rgb) / .18);
+}
+.vitrine__titre {
+  margin: 0 0 8px;
+  font-family: var(--display); font-weight: 600; font-size: 30px;
+  color: var(--cream);
+  text-shadow: 0 2px 10px rgb(var(--void-rgb) / .9);
+}
+.tuiles {
+  display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 calc(var(--gutter, 14px) * -1); padding: 2px var(--gutter, 14px) 4px;
+}
+.tuiles::-webkit-scrollbar { display: none; }
+.tuile {
+  flex: none; width: 92px; height: 74px;
+  display: grid; justify-items: center; align-content: center; gap: 5px;
+  padding: 6px 4px; border-radius: 14px;
+  color: var(--cream);
+  background: rgb(var(--void-rgb) / .8);
+  border: 1px solid rgb(255 255 255 / .1);
+  box-shadow: 0 8px 18px rgb(0 0 0 / .4);
+}
+.tuile__icone { font-size: 26px; line-height: 1; letter-spacing: 2px; }
+.tuile__nom { font-size: 13.5px; font-weight: 600; }
+.tuile[aria-pressed='true'] {
+  border-color: rgb(var(--neon-rgb) / .8);
+  box-shadow: 0 0 0 1px rgb(var(--neon-rgb) / .4), 0 0 18px rgb(var(--neon-rgb) / .35);
+}
+.tuile:active { transform: scale(.95); }
+
+/* Le bandeau promo : la bannière derrière, voilée, un titre et un bouton rouge. */
+.promo {
+  display: block;
+  margin-top: 14px; padding: 24px 18px 20px; border-radius: 18px;
+  background:
+    linear-gradient(90deg, rgb(var(--void-rgb) / .78) 0%, rgb(var(--void-rgb) / .4) 100%),
+    url('/assets/ui/banniere.jpg') center 35% / cover no-repeat;
+  border: 1px solid rgb(255 255 255 / .14);
+  box-shadow: 0 10px 24px rgb(0 0 0 / .45);
+}
+.promo__titre {
+  margin: 0 0 14px;
+  font-style: italic; font-weight: 600; font-size: clamp(21px, 6.4vw, 27px); line-height: 1.15;
+  color: var(--cream);
+  text-shadow: 0 2px 10px rgb(var(--void-rgb) / .9);
+}
+.promo__btn {
+  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 18px; border: 0; border-radius: 22px;
+  font: inherit; font-size: 15px; font-weight: 800;
+  color: #fff; background: #ff3b3b;
+  box-shadow: 0 6px 16px rgb(255 59 59 / .35);
+}
+.promo__btn:active { transform: scale(.96); }
+
+/* Le titre de la grille et son compte. */
+.rayon-tete {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin: 20px 0 12px;
+}
+.rayon-tete__titre {
+  margin: 0; font-family: var(--display); font-weight: 600; font-size: 25px;
+  color: var(--cream);
+}
+.rayon-tete__compte { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+/* ── Les cartes : photo carrée, puis le texte, le prix et le bouton vert ── */
+.card {
+  aspect-ratio: auto;
+  display: flex; flex-direction: column;
+}
+.card__art {
+  position: relative; inset: auto; aspect-ratio: 1 / 1;
+  border-bottom: 1px solid rgb(var(--neon-rgb) / .12);
+}
+.card__body {
+  position: static; z-index: auto;
+  padding: 10px 11px 11px; gap: 2px; flex: 1;
+  background: none;
+}
+.card__rayon {
+  font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: rgb(var(--cream-rgb) / .45);
+}
+.card__name {
+  font-family: var(--sans); font-weight: 800; font-size: 15px; line-height: 1.2;
+  text-transform: none; letter-spacing: 0;
+}
+.card__short {
+  display: block; font-size: 12.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card__note { margin-top: 2px; font-size: 12px; letter-spacing: 0; color: var(--cream); }
+.card__etoiles { color: #f6c445; letter-spacing: 1px; }
+.card__bas {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 6px;
+  margin-top: auto; padding-top: 8px;
+}
+.card__prix { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }
+.card__prix b { font-size: 18px; font-weight: 800; color: var(--cream); white-space: nowrap; }
+.card__prix small { font-size: 11px; font-weight: 600; color: var(--muted); }
+.card__avant { font-size: 12px; color: var(--muted); }
+.card__ajout {
+  flex: none; width: 46px; height: 38px; padding: 0;
+  display: grid; place-items: center; line-height: 1; color: var(--ink);
+  border: 0; border-radius: 12px;
+  background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  box-shadow: 0 0 16px rgb(var(--neon-rgb) / .35);
+}
+.card__ajout svg { width: 21px; height: 21px; }
+.card__ajout:active { transform: scale(.92); }
+
+/* La pastille : -X % en or, comme une étiquette de prix. */
+.card__badge {
+  top: 10px; left: 10px; border-radius: 8px;
+  padding: 4px 8px; letter-spacing: .02em; font-size: 12px; font-weight: 800;
+  box-shadow: none;
+}
+.card__badge:not(.card__badge--etoile) { padding-inline-start: 8px; }
+.card__badge--promo { color: var(--ink); background: var(--jaune); }
+
+/* Le cœur et son compte, en gélule. */
+.card__coeur {
+  width: auto; min-width: 40px; height: 32px; padding: 0 10px; gap: 5px;
+  grid-auto-flow: column; border-radius: 16px;
+  font-size: 15px; color: var(--cream);
+  background: rgb(var(--void-rgb) / .78);
+}
+.card__coeur b { font-size: 14px; font-weight: 800; }
+.card__coeur.est-favori { color: var(--cream); }
+.card__coeur.est-favori span { color: var(--red); }
+
+/* Les formats de la fiche : l'ancien prix barré devant le nouveau. */
+.variant__avant { font-size: .78em; opacity: .6; }
+
+/* ── Le panier et les favoris ────────────────────────────── */
+.vue__titre {
+  margin: 4px 0 14px; font-family: var(--display); font-weight: 600; font-size: 26px;
+  color: var(--cream);
+}
+.panier { display: grid; gap: 10px; }
+.pligne {
+  display: grid; align-items: center; gap: 4px 10px;
+  grid-template-columns: 58px auto 1fr 26px;
+  grid-template-areas: "img texte texte retirer" "img qte total total";
+  padding: 10px; border-radius: 16px;
+  background: rgb(var(--panel-rgb) / .88);
+  border: 1px solid rgb(var(--neon-rgb) / .25);
+}
+.pligne__image {
+  grid-area: img; width: 58px; height: 58px; border-radius: 12px; object-fit: cover;
+  background: rgb(var(--ink-rgb) / .6);
+}
+.pligne__texte { grid-area: texte; display: grid; gap: 1px; min-width: 0; }
+.pligne__nom { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pligne__format { font-size: 12px; color: var(--muted); }
+.pligne__prix { font-size: 12.5px; color: var(--jaune); }
+.pligne__prix s { color: var(--muted); }
+.pligne__qte { grid-area: qte; display: flex; align-items: center; gap: 4px; }
+.pligne__btn {
+  width: 32px; height: 32px; padding: 0; border-radius: 10px;
+  font-size: 18px; font-weight: 800; line-height: 1; color: var(--cream);
+  background: rgb(var(--void-rgb) / .6); border: 1px solid rgb(var(--neon-rgb) / .35);
+}
+.pligne__n { min-width: 24px; text-align: center; font-weight: 800; }
+.pligne__total { grid-area: total; justify-self: end; font-size: 16px; }
+.pligne__retirer {
+  grid-area: retirer; justify-self: end; align-self: start;
+  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
+  font-size: 12px; color: var(--muted); background: rgb(var(--cream-rgb) / .08);
+}
+.panier__vide { display: grid; justify-items: center; gap: 12px; padding: 40px 0; color: var(--muted); }
+.panier__pied { margin-top: 16px; display: grid; gap: 10px; }
+.panier__economie { margin: 0; text-align: end; font-weight: 700; color: var(--sauge); }
+.panier__total {
+  margin: 0; display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 18px; font-weight: 700;
+}
+.panier__total b { font-size: 24px; color: var(--jaune); }
+.panier__vider {
+  justify-self: center; padding: 6px 10px; border: 0; background: none;
+  font: inherit; font-size: 13px; color: var(--muted); text-decoration: underline;
+}
+.profil__contact { margin: 4px 0 14px; }
+
+/* Le récapitulatif de la commande, à copier. */
+.commande__aide { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+.commande__recap-texte {
+  margin: 0; padding: 12px; border-radius: 12px; max-height: 40vh; overflow: auto;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5;
+  white-space: pre-wrap; user-select: text; -webkit-user-select: text;
+  color: var(--cream); background: rgb(var(--void-rgb) / .6);
+  border: 1px solid rgb(var(--neon-rgb) / .3);
+}
+
+/* ── La barre du bas : cinq onglets, des icônes en couleur ── */
+.tabbar__curseur { display: none; }
+.tabbar__item {
+  gap: 4px; padding: 9px 2px 8px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: rgb(var(--cream-rgb) / .62);
+}
+.tabbar__emoji { font-size: 23px; line-height: 1; filter: saturate(.55) brightness(.8); }
+.tabbar__item[aria-selected='true'] { color: var(--jaune); text-shadow: none; }
+.tabbar__item[aria-selected='true'] .tabbar__emoji { filter: none; }
+
+/* ══ La commande, comme sur Napoli : le formulaire du panier ══ */
+.panier__form {
+  margin-top: 14px; padding: 4px 14px 14px; border-radius: 18px;
+  background: rgb(var(--panel-rgb) / .88);
+  border: 1px solid rgb(var(--neon-rgb) / .25);
+}
+.panier__form .field { padding: 12px 0 0; }
+.panier__form .field span { color: var(--jaune); font-weight: 700; }
+.panier__form .field input, .panier__form .field select, .panier__form .field textarea {
+  background: rgb(var(--void-rgb) / .55); border-color: rgb(var(--neon-rgb) / .3);
+}
+.modes { display: flex; gap: 8px; }
+.mode[aria-pressed="true"] { background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep)); }
+.champs-deux { display: grid; grid-template-columns: 2fr 3fr; gap: 7px; }
+.code { display: flex; gap: 8px; }
+.code input { flex: 1; text-transform: uppercase; letter-spacing: .08em; }
+.code input::placeholder { text-transform: none; letter-spacing: 0; }
+.code .btn { flex: none; padding: 0 16px; font-size: 13px; }
+.promo__status { margin: 7px 0 0; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.promo__status--ok { color: var(--sauge); }
+.promo__status--ko { color: var(--red); }
+.cart__hint { margin: 0; font-size: 13px; font-weight: 600; color: var(--jaune); }
+
+/* Le calcul, ligne par ligne, au-dessus du total. */
+.panier__calcul {
+  margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+  font-size: 14px; color: var(--muted);
+}
+.panier__calcul dt, .panier__calcul dd { margin: 0; }
+.panier__calcul dd { text-align: end; color: var(--cream); font-weight: 700; }
+
+/* L'accusé de réception. */
+.done__seal {
+  width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 32px; font-weight: 800;
+  color: var(--ink); background: linear-gradient(180deg, #5cf29a, var(--neon) 55%, var(--neon-deep));
+  box-shadow: 0 0 26px rgb(var(--neon-rgb) / .45);
+}
+.done__title { margin: 0; font-size: 24px; }
+.done__ref {
+  margin: 8px 0 0; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 18px; font-weight: 800; letter-spacing: .06em; color: var(--jaune);
+}
+.done__text { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.done__lines {
+  list-style: none; margin: 14px 0 0; padding: 12px; border-radius: 14px; text-align: start;
+  display: grid; gap: 5px; font-size: 14px;
+  background: rgb(var(--void-rgb) / .5); border: 1px solid rgb(var(--neon-rgb) / .25);
+}
+.done__especes { margin: 12px 0 0; font-size: 13.5px; font-weight: 700; color: var(--cream); }

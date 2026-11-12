@@ -1,0 +1,371 @@
+import { createStore } from './store.js';
+import { HttpError } from './catalog.js';
+import { defaultHours, normalizeHours } from './opening.js';
+import { normalizeTiers } from './promos.js';
+import { normalizeZones, normalizeSlots, defaultSlots } from './delivery.js';
+import { defaultFeatures, normalizeFeatures } from './features.js';
+import { normalizeMusique } from './musique.js';
+import { retenirLeContact, identifiantDeConversation, pseudoTelegram } from './contact.js';
+
+/**
+ * Réglages de la boutique : ce qui se change en exploitation, sans toucher au
+ * code ni redéployer. Le fichier est créé au premier accès avec ces valeurs.
+ */
+const DEFAUTS_FONCTIONNALITES = defaultFeatures();
+
+const DEFAULTS = {
+  // Ce qui est allumé ou éteint. Source de vérité unique : les anciens
+  // `captcha.enabled`, `verification.enabled`, `slots.enabled` et
+  // `opening.hours.enabled` en sont désormais le reflet, pas l'inverse.
+  features: DEFAUTS_FONCTIONNALITES,
+  // Retrait, livraison, frais et minimum de commande. Les montants sont en
+  // centimes, comme partout ailleurs dans le projet.
+  fulfillment: {
+    pickup: true,
+    delivery: false,
+    deliveryFee: 0,
+    freeDeliveryFrom: null,  // null = pas de franco
+    minimumOrder: 0,
+  },
+  // Zones de livraison : chacune ses frais, son minimum et son franco. Vide =
+  // on livre partout aux conditions générales ci-dessus.
+  zones: [],
+  // Créneaux de retrait et de livraison, avec une capacité par créneau.
+  slots: defaultSlots(),
+  // Seuil d'alerte : en dessous, le vendeur reçoit un message.
+  alerts: { lowStock: 3 },
+  // Qui on prévient, et qui les clients écrivent. Les trois champs vides,
+  // c'est le `.env` qui parle — une boutique déjà en service ne voit donc
+  // rien changer tant qu'elle ne touche à rien.
+  contact: {
+    // Où le bot dépose commandes, alertes de stock et messages de clients.
+    // Vide : ADMIN_CHAT_ID.
+    adminChatId: '',
+    // Le compte que le client contacte depuis la boutique. Vide :
+    // SELLER_USERNAME.
+    sellerUsername: '',
+  },
+  // L'entretien qui se fait tout seul, tous les jours.
+  //
+  // La sauvegarde est allumée d'office : elle ne détruit rien, elle ne coûte
+  // qu'un fichier dans une conversation, et le jour où le disque lâche c'est
+  // la seule chose qui compte.
+  //
+  // L'oubli, lui, est éteint : il efface pour de bon, et ce n'est pas à un
+  // réglage par défaut de décider qu'on jette les adresses de ses clients.
+  // Trente jours quand on l'allume — le temps qu'une commande soit livrée,
+  // contestée et réglée.
+  entretien: {
+    sauvegardeAuto: true,
+    oubliAuto: false,
+    oubliJours: 30,
+  },
+  // Remises automatiques par palier de panier. Les codes promo, eux, vivent
+  // dans leur propre fichier : ils se créent et s'épuisent tout seuls.
+  discounts: { tiers: [] },
+  // Garde-fous contre les abus. Généreux par défaut : ils doivent gêner un
+  // robot, pas un client qui commande deux fois dans la soirée.
+  limits: {
+    ordersPerHour: 5,   // commandes par client et par heure
+    unitsPerOrder: 30,  // articles cumulés dans une même commande
+  },
+  // Épreuve d'entrée de la boutique. Vérifiée côté serveur au moment de
+  // commander : la désactiver rouvre la boutique immédiatement.
+  captcha: { enabled: true },
+  // Vérification d'âge par pièce d'identité, envoyée au bot et jugée par le
+  // vendeur. Désactivée par défaut : elle fait manipuler une donnée sensible,
+  // à n'activer que si la loi de ton pays l'exige.
+  verification: { enabled: false },
+  // Ouverture : interrupteur immédiat, et horaires si tu veux qu'elle se
+  // ferme toute seule le soir.
+  opening: {
+    open: true,
+    message: 'La boutique est fermée pour le moment. Reviens un peu plus tard !',
+    // `enabled` se lit dans les fonctionnalités et ne se réécrit pas ici.
+    // Écrit en dur, il valait `false` pendant que l'interrupteur valait
+    // `true` : le fichier créé au premier démarrage sortait donc avec des
+    // horaires éteints et une case cochée, ce qui est exactement la
+    // contradiction que ce bloc prétend avoir supprimée.
+    hours: {
+      enabled: DEFAUTS_FONCTIONNALITES.hours,
+      timezone: 'Europe/Paris',
+      days: defaultHours(),
+    },
+  },
+  /* Le rideau de fer.
+   *
+   * Allumé, la boutique n'existe plus pour personne : la page renvoie
+   * ailleurs et l'API refuse. Ce n'est pas la fermeture ordinaire — celle-ci
+   * dit « on rouvre à 13h » et reste une boutique fermée, visible et
+   * reconnaissable. Le rideau, lui, ne laisse rien à voir.
+   *
+   * Il ne s'éteint que depuis l'espace admin, jamais tout seul : un rideau
+   * qui se relève à l'heure dite ne servirait à rien le jour où il sert. */
+  urgence: false,
+  // La playlist d'ambiance. Chaque morceau est `{ id, titre, fileId }` :
+  // comme les photos et les vidéos, le fichier vit chez Telegram et la
+  // boutique n'en garde que la référence. Rien sur le disque, donc rien à
+  // sauvegarder et rien à perdre en changeant d'hébergeur.
+  //
+  // L'ordre de la liste est l'ordre de lecture. Vide par défaut : la pastille
+  // ne s'affiche pas tant que le vendeur n'a pas envoyé son premier morceau.
+  musique: { titres: [] },
+  // Le bandeau promo du catalogue. Il ne s'affiche que si au moins un
+  // produit est en promo : allumé sur un catalogue sans promo, il
+  // annoncerait des offres que « Voir les offres » ne montrerait pas. Le
+  // titre vide est calculé par la boutique (« jusqu'à -40 % »), et suit
+  // donc les remises sans qu'on ait à le réécrire.
+  promoBandeau: { actif: true, titre: '' },
+  // Identifiants Telegram privés de commande, sous forme de chaînes.
+  blocked: [],
+};
+
+const store = createStore('settings.json', () => structuredClone(DEFAULTS));
+
+/** Réglages complets : les valeurs par défaut comblent les champs absents. */
+export async function getSettings() {
+  const data = await store.read();
+  // Les deux contacts sont lus par du code que rien n'oblige à attendre un
+  // magasin : on les dépose ici, à chaque lecture des réglages — et presque
+  // toute requête en lit. Voir `contact.js` pour le raisonnement.
+  retenirLeContact({ ...DEFAULTS.contact, ...(data.contact ?? {}) });
+  // Une boutique installée avant le tableau de bord n'a pas de bloc
+  // `features` : ses anciens interrupteurs le remplissent, personne ne voit
+  // sa configuration changer sous ses pieds.
+  const features = normalizeFeatures(data.features, legacyFeatures(data));
+
+  return {
+    ...DEFAULTS,
+    ...data,
+    limits: { ...DEFAULTS.limits, ...(data.limits ?? {}) },
+    fulfillment: { ...DEFAULTS.fulfillment, ...(data.fulfillment ?? {}) },
+    alerts: { ...DEFAULTS.alerts, ...(data.alerts ?? {}) },
+    contact: { ...DEFAULTS.contact, ...(data.contact ?? {}) },
+    discounts: { tiers: normalizeTiers(data.discounts?.tiers) },
+    zones: normalizeZones(data.zones),
+    slots: { ...normalizeSlots(data.slots), enabled: features.slots },
+    features,
+    // Reflets : le reste du serveur peut continuer à lire l'interrupteur là où
+    // il l'a toujours lu, sans que deux vérités puissent diverger.
+    captcha: { enabled: features.captcha },
+    verification: { enabled: features.verification },
+    opening: {
+      ...DEFAULTS.opening,
+      ...(data.opening ?? {}),
+      hours: {
+        ...DEFAULTS.opening.hours,
+        ...(data.opening?.hours ?? {}),
+        enabled: features.hours,
+        days: normalizeHours(data.opening?.hours?.days),
+      },
+    },
+    urgence: Boolean(data.urgence),
+    musique: normalizeMusique(data.musique),
+    promoBandeau: { ...DEFAULTS.promoBandeau, ...(data.promoBandeau ?? {}) },
+    blocked: Array.isArray(data.blocked) ? data.blocked : [],
+  };
+}
+
+export async function saveSettings(patch) {
+  if (!patch || typeof patch !== 'object') throw new HttpError(400, 'Réglages invalides.');
+
+  return store.update((data) => {
+    if (patch.limits) {
+      data.limits = {
+        ordersPerHour: bounded(patch.limits.ordersPerHour, 1, 100, DEFAULTS.limits.ordersPerHour),
+        unitsPerOrder: bounded(patch.limits.unitsPerOrder, 1, 999, DEFAULTS.limits.unitsPerOrder),
+      };
+    }
+
+    if (patch.entretien) {
+      const avant = data.entretien ?? DEFAULTS.entretien;
+      data.entretien = {
+        // Un interrupteur absent du patch garde sa valeur : le panel envoie
+        // parfois le seul réglage que le vendeur vient de toucher.
+        sauvegardeAuto: patch.entretien.sauvegardeAuto ?? avant.sauvegardeAuto,
+        oubliAuto: patch.entretien.oubliAuto ?? avant.oubliAuto,
+        // Le plancher de sept jours est aussi posé à la lecture, dans
+        // `entretien.js` : un réglage peut arriver d'une vieille sauvegarde
+        // sans repasser par ici, et l'oubli ne doit jamais mordre sur une
+        // commande de la semaine.
+        oubliJours: bounded(patch.entretien.oubliJours, 7, 3650, avant.oubliJours ?? 30),
+      };
+    }
+    // Les anciennes formes restent acceptées — un script ou un test qui
+    // envoie `captcha: { enabled: false }` doit continuer à marcher — mais
+    // elles atterrissent toutes au même endroit.
+    data.features = normalizeFeatures(
+      {
+        captcha: patch.captcha?.enabled,
+        verification: patch.verification?.enabled,
+        slots: patch.slots?.enabled,
+        hours: patch.opening?.hours?.enabled,
+        ...(patch.features ?? {}),
+      },
+      normalizeFeatures(data.features, legacyFeatures(data))
+    );
+    if (patch.zones) {
+      data.zones = normalizeZones(patch.zones);
+    }
+    if (patch.slots) {
+      // Fusion avec l'existant : l'écran d'admin enregistre parfois le seul
+      // interrupteur, sans réexpédier toute la grille de la semaine.
+      data.slots = normalizeSlots({ ...normalizeSlots(data.slots), ...patch.slots });
+    }
+    if (patch.discounts) {
+      data.discounts = { tiers: normalizeTiers(patch.discounts.tiers) };
+    }
+    // La playlist s'enregistre en entier, jamais par morceau : l'écran de
+    // réglages sert surtout à réordonner, et un réordonnancement n'a de sens
+    // que comme une liste complète. Ce qui ajoute ou retire un fichier passe
+    // par les routes dédiées, qui écrivent ensuite par ici.
+    if (patch.musique) {
+      data.musique = normalizeMusique(patch.musique);
+    }
+    if (patch.promoBandeau) {
+      const avant = { ...DEFAULTS.promoBandeau, ...(data.promoBandeau ?? {}) };
+      data.promoBandeau = {
+        actif: patch.promoBandeau.actif === undefined ? avant.actif : Boolean(patch.promoBandeau.actif),
+        titre: patch.promoBandeau.titre === undefined
+          ? avant.titre
+          : String(patch.promoBandeau.titre).trim().slice(0, 60),
+      };
+    }
+    // Le rideau se lève et se baisse tout seul, sans dépendre d'autre chose :
+    // le jour où l'on s'en sert, on ne veut pas découvrir qu'il fallait aussi
+    // envoyer un autre réglage pour qu'il prenne.
+    if (patch.urgence !== undefined) {
+      data.urgence = Boolean(patch.urgence);
+    }
+    if (patch.alerts) {
+      data.alerts = {
+        lowStock: bounded(patch.alerts.lowStock, 0, 999, DEFAULTS.alerts.lowStock),
+      };
+    }
+    if (patch.contact) {
+      const avant = { ...DEFAULTS.contact, ...(data.contact ?? {}) };
+      // Chaque champ absent du patch garde sa valeur : le panneau enregistre
+      // parfois le seul réglage que le vendeur vient de toucher.
+      const garde = (clef, valider) => {
+        if (patch.contact[clef] === undefined) return avant[clef];
+        try {
+          return valider(patch.contact[clef]);
+        } catch (err) {
+          throw new HttpError(400, err.message);
+        }
+      };
+      data.contact = {
+        adminChatId: garde('adminChatId', identifiantDeConversation),
+        sellerUsername: garde('sellerUsername', pseudoTelegram),
+      };
+      retenirLeContact(data.contact);
+    }
+    if (patch.fulfillment) {
+      const current = { ...DEFAULTS.fulfillment, ...(data.fulfillment ?? {}) };
+      const pickup = patch.fulfillment.pickup === undefined ? current.pickup : Boolean(patch.fulfillment.pickup);
+      const delivery = patch.fulfillment.delivery === undefined ? current.delivery : Boolean(patch.fulfillment.delivery);
+      if (!pickup && !delivery) {
+        throw new HttpError(400, 'Garde au moins un mode : retrait ou livraison.');
+      }
+
+      const franco = patch.fulfillment.freeDeliveryFrom;
+      data.fulfillment = {
+        pickup,
+        delivery,
+        deliveryFee: bounded(patch.fulfillment.deliveryFee ?? current.deliveryFee, 0, 100000, current.deliveryFee),
+        freeDeliveryFrom:
+          franco === undefined ? current.freeDeliveryFrom
+          : franco === null || franco === '' ? null
+          : bounded(franco, 0, 1000000, current.freeDeliveryFrom ?? 0),
+        minimumOrder: bounded(patch.fulfillment.minimumOrder ?? current.minimumOrder, 0, 1000000, current.minimumOrder),
+      };
+    }
+    if (patch.opening) {
+      const current = data.opening ?? DEFAULTS.opening;
+      data.opening = {
+        open: patch.opening.open === undefined ? current.open : Boolean(patch.opening.open),
+        message:
+          patch.opening.message === undefined
+            ? current.message
+            : String(patch.opening.message).slice(0, 300),
+        hours: patch.opening.hours
+          ? {
+              enabled: Boolean(patch.opening.hours.enabled),
+              timezone: validTimezone(patch.opening.hours.timezone) ?? current.hours?.timezone ?? 'Europe/Paris',
+              days: normalizeHours(patch.opening.hours.days ?? current.hours?.days),
+            }
+          : current.hours,
+      };
+    }
+    if (patch.blocked) {
+      data.blocked = normalizeIds(patch.blocked);
+    }
+    return { ...DEFAULTS, ...data };
+  });
+}
+
+/**
+ * Interrupteurs d'une boutique antérieure au tableau de bord.
+ *
+ * Sert de socle quand `features` n'existe pas encore dans le fichier : sans
+ * ça, une boutique qui tournait CAPTCHA coupé le verrait se rallumer au
+ * premier démarrage après la mise à jour.
+ */
+function legacyFeatures(data) {
+  return {
+    captcha: data.captcha?.enabled,
+    verification: data.verification?.enabled,
+    slots: data.slots?.enabled,
+    hours: data.opening?.hours?.enabled,
+  };
+}
+
+/** Prive un client de commande ; le geste se fait depuis une commande reçue. */
+export async function blockClient(id) {
+  const value = String(id).trim();
+  if (!/^\d{1,20}$/.test(value)) throw new HttpError(400, 'Identifiant Telegram invalide.');
+
+  return store.update((data) => {
+    const blocked = normalizeIds(data.blocked ?? []);
+    if (!blocked.includes(value)) blocked.push(value);
+    data.blocked = blocked;
+    return { ...DEFAULTS, ...data };
+  });
+}
+
+export async function unblockClient(id) {
+  const value = String(id).trim();
+  return store.update((data) => {
+    data.blocked = normalizeIds(data.blocked ?? []).filter((v) => v !== value);
+    return { ...DEFAULTS, ...data };
+  });
+}
+
+export function isBlocked(settings, id) {
+  return settings.blocked.includes(String(id));
+}
+
+/* ── Validation ──────────────────────────────────────────── */
+
+/** Un fuseau inconnu ferait planter le calcul des horaires à chaque appel. */
+function validTimezone(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: value }).format(new Date());
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function bounded(value, min, max, fallback) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+/** Identifiants Telegram : des entiers, en chaînes, sans doublon. */
+function normalizeIds(list) {
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map((v) => String(v).trim()).filter((v) => /^\d{1,20}$/.test(v)))].slice(0, 500);
+}

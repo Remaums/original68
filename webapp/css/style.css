@@ -1,0 +1,2860 @@
+/* ══════════════════════════════════════════════════════════════
+   Original68 — feuille de style
+   Direction artistique « La ruelle ». Elle vient des deux visuels de la
+   maison : une venelle la nuit, béton mouillé, tôle rouillée, murs
+   taggués, un lampadaire orange d'un côté, des éclairs bleu-blanc de
+   l'autre, et le jaune de l'enseigne au milieu.
+
+   Ce que ça change par rapport à la version d'avant, qui était un
+   autocollant jaune sur fond noir et que personne n'a reconnue :
+
+   - le jaune n'est plus la couleur de l'interface, c'est celle de la
+     marque. Il ne sort que pour le logo, les prix, et rien d'autre ;
+   - ce qui s'allume est bleu électrique, comme les éclairs : l'onglet
+     ouvert, le champ actif, ce qu'on vient de toucher ;
+   - ce qui réchauffe est ambre, comme les lampadaires : les halos, les
+     bordures des panneaux éclairés, les commandes en cours ;
+   - le fond n'est pas un aplat. C'est du béton : un gris légèrement
+     froid, un grain fin, une lueur orange en haut à gauche et une lueur
+     froide en haut à droite. Une ruelle n'est jamais d'une seule teinte.
+
+   Et le rouge du « OPEN 7/7 » reste ce qu'il est sur la vitrine : un
+   néon, réservé à ce qui est fermé ou en rupture.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Palette ─────────────────────────────────────────────────
+   Toutes les couleurs du thème descendent de ces composantes RVB :
+   changer de palette, c'est réécrire ce seul bloc. Les valeurs sont
+   données en composantes brutes pour pouvoir moduler l'opacité avec
+   la syntaxe rgb(var(--x) / .5). */
+:root {
+  /* La Grosse Frappe — d'après la maquette : une affiche au soleil couchant
+     derrière, et devant des panneaux de verre vert sombre, un lettrage or
+     qui brille en vert, des boutons verts. Les noms des variables viennent
+     de Tanja ; ils sont cités partout, seules les valeurs changent. */
+  --void-rgb:     3  8  6;    /* fonds d'écran modaux */
+  --night-rgb:    7 14 11;    /* fond de page, sous l'affiche */
+  --night2-rgb:   9 19 14;    /* barres hautes et basses */
+  --panel-rgb:   15 31 23;    /* surface haute (cartes, panneaux) */
+  --panel2-rgb:  11 24 18;    /* surface basse */
+  --ink-rgb:      4  9  7;    /* contours, et texte posé sur le vert */
+  --cream-rgb:  241 237 224;  /* texte — blanc chaud */
+  --line-rgb:    70 200 130;  /* filets et bordures : le vert, éteint */
+
+  /* Le vert de la maquette : ce qui s'allume, ce qu'on touche. */
+  --neon-rgb:   46 224 122;
+  --halo-rgb:   46 224 122;
+  --halo2-rgb: 255  72  72;   /* favoris, rouge des promos */
+  --halo3-rgb: 245 190  80;   /* compteurs */
+
+  /* L'or du titre : la marque, les prix. */
+  --jaune-rgb: 236 200 110;
+  --gold-rgb:  236 200 110;
+  --gold-lo-rgb: 176 136  56;
+  --rouille-rgb: 168  40  40; /* le rouge du drapeau et de la djellaba */
+  --red-rgb:   255  72  72;
+
+  --neon-hi: #8ff5bb;
+  --neon-deep: #1fb862;
+  --gold-hi: #f6dd9a;
+  --sauge: #2ee07a;
+}
+
+:root {
+  /* Fonds — opaques : la transparence laissait passer le dégradé du
+     corps, qui n'existe plus. Une carte se lit à sa surface, pas au
+     travers. */
+  --night: rgb(var(--night-rgb));
+  --night-2: rgb(var(--night2-rgb));
+  --panel: rgb(var(--panel-rgb));
+  --panel-2: rgb(var(--panel2-rgb));
+
+  /* Néons */
+  --neon: rgb(var(--neon-rgb));
+  --halo: rgb(var(--halo-rgb));
+  --pink: rgb(var(--halo2-rgb));
+
+  /* Ambre du lampadaire, et le jaune de la marque */
+  --gold: rgb(var(--gold-rgb));
+  --gold-lo: rgb(var(--gold-lo-rgb));
+  --jaune: rgb(var(--jaune-rgb));
+  --rouille: rgb(var(--rouille-rgb));
+
+  /* Traits & textes */
+  --ink: rgb(var(--ink-rgb));
+  --cream: rgb(var(--cream-rgb));
+  --muted: rgb(var(--cream-rgb) / .68);
+  --line-soft: rgb(var(--line-rgb) / .2);
+
+  /* Alias hérités (admin.css et états produits) */
+  --green: var(--neon-deep);
+  --green-dark: var(--neon-deep);
+  --yellow: var(--jaune);
+  --red: rgb(var(--red-rgb));
+  --paper: var(--night);
+
+  /* La typo de la boutique. Chakra Petch a les angles coupés d'une borne
+     d'arcade et d'un écran de jeu : c'est la seule des candidates qui
+     parle la même langue que l'éclair et le néon du reste. Elle remplace
+     Bebas Neue, qui était une condensée en capitales — le lettrage cloué
+     au poteau, juste, mais muet sur ce que vend cette boutique-là.
+
+     Le prix à payer est réel et il est dans les cartes : Bebas était
+     condensée, Chakra Petch ne l'est pas, et un nom de produit y prend
+     une ligne de plus. Voir .card__name.
+
+     Inter dessous, pour tout ce qui se lit : c'est le caractère le plus
+     lisible aux petites tailles, et une WebView de téléphone n'offre que
+     des petites tailles. */
+  --display: 'Chakra Petch', system-ui, sans-serif;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Un filet fin et des angles à peine cassés : du béton coffré, pas un
+     autocollant découpé. Le contour de 2 px et les coins vifs, c'était la
+     forme du sticker — elle ne survit pas au reste. */
+  --line: 1px;
+  --radius: 10px;
+  --shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  --shadow-sm: 0 3px 10px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, .55);
+  /* Gardés pour les règles qui les nomment encore, mais réduits à presque
+     rien : supprimer les deux variables aurait cassé trente déclarations
+     pour le même résultat. */
+  --glow-neon: 0 0 0 1px rgb(var(--neon-rgb) / .28);
+  --glow-halo: none;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* Les règles display: grid/flex ci-dessous sont plus spécifiques que le
+   display:none du navigateur pour [hidden] : sans ce !important, masquer un
+   panneau ou l'écran d'âge ne les ferait pas disparaître. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--cream);
+  background-color: var(--night);
+  /* Deux lumières et un grain, c'est tout ce qui fait la ruelle.
+
+     Le lampadaire est en haut à gauche, ambre et large ; l'orage est en
+     haut à droite, froid et plus serré. Aucun des deux n'est assez fort
+     pour se remarquer, mais entre les deux le fond cesse d'être un aplat —
+     et c'est exactement ce qui manquait à la version d'avant, qui posait
+     des rayures jaunes sur du noir et ressemblait à un autocollant.
+
+     Le grain est une turbulence SVG en ligne : pas de fichier à charger,
+     pas de requête, et il se répète sans coupure visible. À trois pour
+     cent il ne se voit pas, il s'entend — la surface a l'air de béton au
+     lieu d'avoir l'air de rien. */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.3'/%3E%3C/svg%3E"),
+    radial-gradient(70% 45% at 12% 0%, rgb(var(--gold-rgb) / .11), transparent 70%),
+    radial-gradient(52% 38% at 92% 2%, rgb(var(--neon-rgb) / .10), transparent 72%);
+  background-size: 160px 160px, auto, auto;
+  background-attachment: fixed;
+  background-repeat: repeat, no-repeat, no-repeat;
+  overscroll-behavior-y: none;
+}
+
+::selection { background: rgb(var(--neon-rgb) / .3); color: var(--cream); }
+
+/* ── Recherche et tri ────────────────────────────────────── */
+/* Dépliée, la rangée s'ouvre : posée d'un coup elle ferait sauter tout le
+   catalogue d'un cran, et on ne saurait pas d'où elle vient. */
+.find { display: flex; gap: 8px; padding: 6px 14px; animation: deplier .18s ease both; }
+@keyframes deplier {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+[data-anim='off'] .find { animation: none; }
+@media (prefers-reduced-motion: reduce) { .find { animation: none; } }
+.find__box {
+  position: relative; flex: 1; min-width: 0; display: flex; align-items: center;
+}
+.find__icon { position: absolute; inset-inline-start: 12px; font-size: 14px; pointer-events: none; opacity: .75; }
+.find__box input {
+  width: 100%; font: inherit; font-size: 14px; font-weight: 600; color: var(--cream);
+  background: rgb(var(--ink-rgb) / .55); border: var(--line) solid var(--line-soft);
+  border-radius: var(--radius); padding: 10px 34px 10px 34px;
+  -webkit-appearance: none; appearance: none;
+}
+.find__box input::placeholder { color: rgb(var(--cream-rgb) / .42); }
+.find__box input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+/* La croix native des champs de recherche varie d'un moteur à l'autre : on
+   pose la nôtre pour qu'elle soit toujours là et toujours assez grande. */
+.find__box input::-webkit-search-cancel-button { display: none; }
+.find__clear {
+  position: absolute; inset-inline-end: 4px; width: 28px; height: 28px; border: 0; border-radius: 50%;
+  background: rgb(var(--cream-rgb) / .12); color: var(--cream); font-size: 12px; line-height: 1;
+}
+.find select {
+  flex: 0 1 auto; max-width: 42%; font: inherit; font-size: 13px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--ink-rgb) / .55);
+  border: var(--line) solid var(--line-soft); border-radius: var(--radius); padding: 10px 12px;
+}
+.find select:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.find select option { background: var(--night-2); color: var(--cream); }
+
+/* ── Décor de fond ───────────────────────────────────────── */
+/* Éclairs « sprayés » et voile de fumée, purement décoratifs. */
+/* La couche d'orage passe AU-DESSUS de la page, pas derrière.
+
+   Derrière, elle ne servait à rien : la bannière, les cartes et les deux
+   barres sont opaques, si bien que l'éclair frappait sous un plancher et
+   qu'on ne voyait rien — c'était le défaut de la version précédente, où
+   les éclairs étaient à la fois immobiles et cachés.
+
+   Au-dessus, la foudre éclaire la ruelle comme elle le ferait dehors. Le
+   `pointer-events: none` est ce qui rend la chose possible : la couche
+   couvre tout l'écran mais ne reçoit aucun appui, donc on continue de
+   toucher les cartes et les onglets au travers. Elle reste sous l'écran
+   d'ouverture et sous les fenêtres (z-index 120 et plus), qui doivent
+   rester lisibles pendant qu'on y répond. */
+.fx {
+  position: fixed; inset: 0; z-index: 45;
+  pointer-events: none; overflow: hidden;
+}
+/* L'orage. Les trois éclairs d'avant étaient posés à quatre pour cent
+   d'opacité, fixes : autant dire absents — c'était le reproche, et il
+   était juste. Ceux-ci frappent.
+
+   Un éclair ne s'allume pas en fondu, il claque : plein, presque éteint,
+   plein à nouveau, puis rien. D'où ces images d'animation rapprochées au
+   début du cycle et ce long plat à zéro ensuite — neuf secondes sur dix,
+   il n'y a rien à l'écran, et c'est ce qui fait que la dixième se
+   remarque. Trois cycles de durées premières entre elles (9, 11 et 13
+   secondes), pour que les trois arcs ne se resynchronisent jamais.
+
+   `opacity` seule est animée : elle se compose sur le GPU, donc ça ne
+   déclenche ni recalcul de mise en page ni repeinture de la liste qu'on
+   est en train de faire défiler. */
+.fx__arc {
+  position: absolute; width: 186px; opacity: 0;
+  will-change: opacity;
+}
+.fx__arc--a {
+  top: -8%; left: -58px; transform: rotate(-14deg);
+  animation: coup 7s steps(1, end) infinite;
+}
+.fx__arc--b {
+  top: -12%; right: -66px; width: 200px; transform: rotate(18deg) scaleX(-1);
+  animation: coup 9s steps(1, end) 2.3s infinite;
+}
+/* Le troisième part du haut de l'écran et descend court : c'est celui qui
+   passe devant, et il ne va pas jusqu'au catalogue. */
+.fx__arc--c {
+  top: -16%; left: 46%; width: 128px; height: 46vh; object-fit: cover;
+  object-position: top; transform: rotate(5deg);
+  animation: coup 11s steps(1, end) 5.2s infinite;
+}
+
+/* L'éclat : la lueur que l'arc jette sur toute la ruelle. Sans lui, un
+   éclair est un dessin posé sur un fond ; avec lui, c'est le fond qui
+   s'éclaire — et c'est ce qui vend l'effet. Il part du haut, parce que
+   c'est de là que vient l'orage. */
+.fx__eclat {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(90% 55% at 50% -10%, rgb(var(--neon-rgb) / .5), transparent 70%);
+  animation: eclat 7s steps(1, end) infinite;
+}
+
+/* Le claquement. Les temps sont donnés en pourcentage d'un cycle : à 9 s,
+   le premier flash dure environ neuf centièmes de seconde. */
+@keyframes coup {
+  0%, 88%   { opacity: 0; }
+  88.5%     { opacity: .85; }
+  89.5%     { opacity: .12; }
+  90.5%     { opacity: 1; }
+  92%       { opacity: .3; }
+  93%, 100% { opacity: 0; }
+}
+@keyframes eclat {
+  0%, 88%   { opacity: 0; }
+  88.5%     { opacity: .5; }
+  89.5%     { opacity: .08; }
+  90.5%     { opacity: .62; }
+  92%, 100% { opacity: 0; }
+}
+
+/* ── La décharge de l'arrivée ────────────────────────────────
+   Quand le catalogue apparaît, trois arcs jaunes tombent d'un coup et la
+   boutique s'éclaire. Une seule fois : c'est un lever de rideau, pas un
+   élément de décor. Le décor, lui, reste bleu et continue en boucle
+   derrière — les deux ne se confondent donc jamais.
+
+   Le jaune est la couleur de l'enseigne, réservée ailleurs au logo et aux
+   prix. Elle sort ici parce que c'est précisément le moment où la boutique
+   se présente.
+
+   Rien ne joue tant que la classe n'est pas posée : les arcs sont à zéro,
+   et c'est le script qui déclenche, après le départ du voile. Une animation
+   qui partirait au chargement de la feuille serait finie avant que le
+   catalogue ne soit là. */
+.fx__coup {
+  position: absolute; width: 210px; opacity: 0;
+  will-change: opacity;
+}
+.fx__coup--a { top: -10%; left: -50px; transform: rotate(-11deg); }
+.fx__coup--b { top: -14%; right: -60px; width: 235px; transform: rotate(15deg) scaleX(-1); }
+.fx__coup--c { top: -18%; left: 40%; width: 165px; transform: rotate(4deg); }
+
+.fx__eclat-jaune {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(110% 65% at 50% -8%, rgb(var(--jaune-rgb) / .55), transparent 72%);
+}
+
+/* Les trois arcs ne tombent pas ensemble : décalés de deux dixièmes, ils
+   font une rafale. Ensemble, ils feraient un seul flash. */
+.fx--arrivee .fx__coup--a     { animation: coup-arrivee 1.1s steps(1, end) 0s    1; }
+.fx--arrivee .fx__coup--c     { animation: coup-arrivee 1.1s steps(1, end) .19s  1; }
+.fx--arrivee .fx__coup--b     { animation: coup-arrivee 1.1s steps(1, end) .42s  1; }
+.fx--arrivee .fx__eclat-jaune { animation: eclat-arrivee 1.5s steps(1, end) 0s 1; }
+
+/* La rafale se lit sur presque tout le cycle, là où les arcs du décor
+   passent l'essentiel du leur à zéro : ici on ne cache pas l'éclair, on le
+   montre, et la durée courte suffit à ce qu'il ne s'installe pas. */
+@keyframes coup-arrivee {
+  0%        { opacity: 0; }
+  6%        { opacity: 1; }
+  16%       { opacity: .18; }
+  26%       { opacity: 1; }
+  44%       { opacity: .45; }
+  70%, 100% { opacity: 0; }
+}
+@keyframes eclat-arrivee {
+  0%        { opacity: 0; }
+  4%        { opacity: .62; }
+  11%       { opacity: .1; }
+  19%       { opacity: .7; }
+  32%       { opacity: .2; }
+  60%, 100% { opacity: 0; }
+}
+
+/* Sans mouvement, pas de lever de rideau : le catalogue arrive, c'est
+   tout. Les arcs jaunes n'ont pas d'équivalent immobile — un éclair figé
+   en travers de l'écran resterait là sans rien vouloir dire. */
+[data-anim='off'] .fx__coup,
+[data-anim='off'] .fx__eclat-jaune { animation: none !important; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .fx__coup, .fx__eclat-jaune { animation: none !important; opacity: 0; }
+}
+
+/* Un orage qui claque toutes les neuf secondes derrière une liste qu'on
+   lit, c'est insupportable pour qui a coupé les animations — et c'est
+   souvent un réglage posé pour raison médicale. Les arcs restent, fixes
+   et discrets : le décor ne disparaît pas, il se tait. */
+[data-anim='off'] .fx__arc,
+[data-anim='off'] .fx__eclat { animation: none; }
+[data-anim='off'] .fx__arc { opacity: .07; }
+[data-anim='off'] .fx__eclat { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .fx__arc, .fx__eclat { animation: none; }
+  .fx__arc { opacity: .07; }
+  .fx__eclat { opacity: 0; }
+}
+/* La fumée qui dérivait est éteinte : un fond qui bouge derrière une
+   liste qu'on fait défiler donne le tournis, et c'était le plus flagrant
+   des effets « néon » qu'on abandonne ici. */
+.fx__smoke { display: none; }
+@keyframes drift {
+  from { transform: translate3d(-3%, 2%, 0) scale(1); }
+  to   { transform: translate3d(4%, -3%, 0) scale(1.08); }
+}
+
+/* ── Typographie d'affiche ───────────────────────────────── */
+h1, h2, h3, .display,
+.topbar__name, .card__name {
+  font-family: var(--display);
+  /* Chakra Petch a un vrai 700, contrairement à Bebas Neue qui n'existait
+     qu'en 400. On peut donc laisser le navigateur l'utiliser : la coupure
+     de synthèse d'avant existait pour l'empêcher d'épaissir lui-même des
+     lettres qui n'avaient pas de version grasse, et elle rendrait
+     maintenant le titre plus maigre que demandé. */
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin: 0;
+}
+
+/* Lettrage doré de l'affiche : dégradé clippé sur le glyphe, contour noir
+   obtenu par ombres portées enchaînées (chaque drop-shadow reprend le
+   résultat de la précédente : l'ensemble dilate la lettre sans recouvrir le
+   dégradé, ce que feraient text-stroke ou text-shadow), puis relief + halo. */
+/* Les titres. La classe s'appelle encore `goldtext` parce qu'elle est posée
+   sur une trentaine d'éléments et qu'un renommage n'aurait rien changé à
+   l'écran — mais elle ne fait plus d'or, et surtout plus de cerne.
+
+   Le contour d'encre à huit ombres, c'était le lettrage d'un autocollant :
+   lisible, mais il transformait chaque titre en logo et donnait à l'écran
+   entier un air de fête foraine. Ici un titre est peint au pochoir sur le
+   mur — blanc cassé, capitales condensées, très légèrement espacées — et
+   seule la lueur froide dessous rappelle l'orage. */
+.goldtext {
+  font-family: var(--display);
+  font-weight: 400;
+  color: var(--cream);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  text-shadow: 0 0 22px rgb(var(--neon-rgb) / .2);
+}
+
+/* Ce qui doit vraiment briller. Réservé : posé partout, un néon n'éclaire
+   plus rien. */
+.neontext {
+  color: var(--neon);
+  text-shadow: 0 0 14px rgb(var(--neon-rgb) / .55);
+}
+
+img { max-width: 100%; display: block; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ── Boutons ─────────────────────────────────────────────── */
+.btn {
+  border: var(--line) solid rgba(255, 255, 255, .1);
+  border-radius: 14px;
+  padding: 13px 20px;
+  font-weight: 700;
+  font-size: 15.5px;
+  color: var(--cream);
+  background: rgba(255, 255, 255, .06);
+  box-shadow: none;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.btn:active { transform: translateY(2px) scale(.985); filter: brightness(1.05); }
+/* Un aplat, pas un dégradé à trois arrêts avec reflet intérieur et halo.
+   Le bouton principal se distingue d'être le seul vert de l'écran ; il
+   n'a pas besoin de briller en plus. */
+.btn--primary {
+  color: var(--ink);
+  background: var(--neon);
+  border-color: rgb(255 255 255 / .35);
+  /* Le halo est ce qui fait l'enseigne : sans lui, un aplat bleu clair sur
+     du béton a l'air d'un bouton désactivé. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .45),
+    0 0 26px rgb(var(--neon-rgb) / .45);
+  text-shadow: none;
+}
+.btn--primary:active {
+  background: var(--neon-deep);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .3), 0 0 14px rgb(var(--neon-rgb) / .5);
+}
+.btn--ghost { background: rgba(255, 255, 255, .06); }
+.btn--grow { flex: 1; }
+
+/* La barre ne porte plus qu'un bouton, mais les marges restent rendues :
+   Inter est plus large que Barlow, et à 390 px un libellé long tenait sur
+   deux rangées — 123 px de haut au lieu de 68. */
+.pbar .btn { padding-left: 14px; padding-right: 14px; font-size: 14.5px; }
+.pbar .btn--block { gap: 7px; }
+.btn__libelle { white-space: nowrap; }
+/* Le bouton peut rétrécir sous la largeur de son texte : sans cette ligne,
+   un élément de flex refuse de descendre sous son contenu, et c'est la
+   barre entière qui se replie au lieu du seul libellé. */
+.pbar .btn { min-width: 0; }
+
+.pbar__question {
+  flex: none; display: flex; align-items: center; gap: 7px;
+  padding: 13px 12px; font-size: 13.5px; white-space: nowrap;
+  color: rgb(var(--cream-rgb) / .82);
+}
+.pbar__question .btn__icone { width: 17px; height: 17px; }
+.pbar__question:active { background: rgba(255, 255, 255, .12); }
+
+/* Sur un écran étroit, les deux ne tiennent pas côte à côte sans que le prix
+   du bouton principal ne passe à la ligne. La question descend alors sous
+   « Commander », pleine largeur — deux lignes valent mieux qu'un prix coupé. */
+.pbar__court { display: none; }
+@media (max-width: 392px) {
+  .pbar__long { display: none; }
+  .pbar__court { display: inline; }
+}
+/* Sous 330 px il n'y a plus de tour de passe-passe qui tienne : le bouton
+   prend sa propre rangée. La réserve sous la fiche est mesurée à
+   l'affichage, elle suit donc la barre qui grandit. */
+@media (max-width: 330px) {
+  .pbar__question { flex: 1 0 100%; justify-content: center; }
+}
+.btn[disabled] { opacity: .45; pointer-events: none; box-shadow: none; }
+
+/* ── Contrôle d'âge ──────────────────────────────────────── */
+.agegate {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center; padding: 20px;
+  background: rgb(var(--void-rgb) / .9);
+  backdrop-filter: blur(6px);
+}
+.agegate__card {
+  position: relative;
+  background: var(--panel);
+  border: var(--line) solid var(--line-soft);
+  border-radius: 26px;
+  box-shadow: var(--shadow-lg), var(--glow-halo), inset 0 1px 0 rgba(255, 255, 255, .1);
+  padding: 22px 20px 18px;
+  max-width: 340px; text-align: center;
+}
+/* Pastille « 18+ » : le sceau qui remplace l'ancienne mascotte. */
+.agegate__seal {
+  display: grid; place-items: center;
+  width: 84px; height: 84px; margin: -62px auto 6px;
+  font-family: var(--display); font-weight: 700;
+  font-size: 27px; line-height: 1; color: var(--ink);
+  background: var(--neon);
+  border: 4px solid var(--night-2); border-radius: 50%;
+  box-shadow: none;
+}
+.agegate__title { font-size: 44px; }
+.agegate__text { font-size: 15px; line-height: 1.45; margin: 6px 0 16px; color: var(--muted); }
+.agegate__text strong { color: var(--cream); }
+.agegate__actions { display: flex; gap: 10px; }
+.agegate__actions .btn { flex: 1; padding: 13px 12px; font-size: 15px; }
+.agegate__legal { font-size: 11px; color: var(--muted); opacity: .8; line-height: 1.4; margin: 14px 0 0; font-weight: 600; }
+
+/* ── Portes d'entrée (épreuve, vérification) ─────────────── */
+.gate {
+  position: fixed; inset: 0; z-index: 95;
+  display: grid; place-items: center; padding: 20px;
+  background: rgb(var(--void-rgb) / .92);
+  backdrop-filter: blur(8px);
+}
+.gate__card {
+  width: 100%; max-width: 360px; text-align: center;
+  background: var(--panel);
+  border: var(--line) solid var(--line-soft);
+  border-radius: 26px; padding: 24px 20px 20px;
+  box-shadow: var(--shadow-lg), var(--glow-halo);
+}
+.gate__eyebrow {
+  margin: 0 0 6px; font-size: 11.5px; font-weight: 800;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--neon);
+}
+/* « Étape 1 sur 2 » : discret, sous le sur-titre. Il renseigne, il
+   n'annonce pas — le titre de la marche reste ce qu'on lit en premier. */
+.gate__marches {
+  margin: 0 0 8px; font-size: 12px; font-weight: 700;
+  color: rgb(var(--cream-rgb) / .58);
+}
+.gate__title { font-size: 30px; line-height: 1.05; margin: 0; }
+.gate__text { margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.gate__fine {
+  margin: 14px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); opacity: .85;
+}
+.gate__error {
+  margin: 12px 0 0; font-size: 13.5px; font-weight: 800; color: var(--red);
+}
+.gate .btn { width: 100%; margin-top: 16px; }
+
+/* ── L'épreuve d'entrée : la pièce qui manque ───────────────
+   Le plateau porte trois couches : l'image, le trou, la pièce. Les trois
+   sont positionnées en pixels par le script, d'après les tailles que le
+   serveur annonce — la mise en page ne suppose donc aucune dimension. */
+.puzzle {
+  position: relative; margin: 18px auto 10px;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid rgb(255 255 255 / .12);
+  background: rgb(var(--void-rgb) / .6);
+  touch-action: none;              /* le doigt fait glisser, il ne défile pas */
+  user-select: none; -webkit-user-select: none;
+  max-width: 100%;
+}
+.puzzle__fond { display: block; width: 100%; height: auto; pointer-events: none; }
+/* Le trou : un creux, pas un cadre. L'ombre portée vers l'intérieur suffit à
+   le faire lire comme un manque, sans dessiner de bordure qui ferait croire
+   à une case à cocher. */
+.puzzle__trou {
+  position: absolute; border-radius: 8px;
+  background: rgb(var(--void-rgb) / .72);
+  box-shadow: inset 0 2px 10px rgb(0 0 0 / .65);
+  outline: 1px solid rgb(255 255 255 / .18);
+  pointer-events: none;
+}
+.puzzle__piece {
+  position: absolute; padding: 0; border-radius: 8px; cursor: grab;
+  border: 1px solid rgb(255 255 255 / .35);
+  box-shadow: 0 4px 14px rgb(0 0 0 / .55);
+  background-repeat: no-repeat;
+  touch-action: none;
+}
+.puzzle__piece:active { cursor: grabbing; }
+.puzzle__piece:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+.puzzle--gagne .puzzle__piece { border-color: rgb(var(--neon-rgb) / .9); }
+
+/* ── « Pour commander » ─────────────────────────────────────
+   Un panneau qui informe, et n'emmène nulle part : il dit sur quel canal se
+   prennent les commandes, sans donner d'adresse.
+
+   Le bandeau jaune est l'information principale. La couleur de Snapchat se
+   reconnaît avant qu'on ait lu un mot — c'est un repère de canal, pas une
+   signature : l'émoji vient de la police du système, et rien ici ne se fait
+   passer pour l'application. */
+#commandeSheet .sheet__panel { overflow: hidden; }
+#commandeSheet .sheet__scroll { padding: 0 0 6px; }
+.commande__bandeau {
+  display: grid; place-items: center;
+  padding: 22px 0 16px; font-size: 44px; line-height: 1;
+  background: linear-gradient(180deg, #FFFC00 0%, #FFE600 100%);
+}
+.commande__corps { padding: 18px 20px 4px; }
+.commande__corps .feuille__titre { margin: 0 0 8px; }
+.commande__texte { margin: 0; color: rgb(var(--cream-rgb) / .82); line-height: 1.55; }
+/* Sur le jaune, la croix claire des autres panneaux disparaissait. Elle passe
+   en sombre, comme un bouton posé sur une surface claire — c'est le seul
+   endroit de la boutique où ça se produit. */
+.sheet__close--clair {
+  color: #1b1b1b;
+  background: rgb(0 0 0 / .14);
+  border-color: rgb(0 0 0 / .22);
+  backdrop-filter: none;
+}
+
+/* Le seul bouton de la fiche, éteint : l'article est épuisé. Il reste en
+   place et le dit — le faire disparaître laissait une barre vide au bas
+   d'une fiche, sans rien qui explique pourquoi on ne peut pas commander. */
+.btn--eteint {
+  opacity: .55; filter: grayscale(.6); box-shadow: none; cursor: not-allowed;
+}
+
+.grid-tiles {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0 0;
+}
+.tile {
+  aspect-ratio: 1; display: grid; place-items: center;
+  font-size: 34px; line-height: 1;
+  background: rgb(var(--ink-rgb) / .5);
+  border: var(--line) solid var(--line-soft); border-radius: 16px;
+  transition: transform .1s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.tile[aria-pressed="true"] {
+  border-color: var(--neon); box-shadow: var(--glow-neon), inset 0 0 22px rgb(var(--neon-rgb) / .18);
+  transform: scale(.96);
+}
+
+/* ── Barre supérieure ────────────────────────────────────── */
+.topbar {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + var(--safe-top)) 14px 10px;
+  background: rgb(var(--night2-rgb) / .88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.topbar__brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* ── L'enseigne, dans l'en-tête ──────────────────────────────
+   Quarante-huit pixels. Le sticker n'était qu'une tache à vingt-six, et
+   reconnaissable à trente-quatre ; à quarante-huit on lit le personnage et
+   l'anneau, ce qui est le minimum pour qu'une enseigne serve d'enseigne.
+   L'en-tête grandit de quelques pixels, et c'est le prix à payer.
+
+   Pleine opacité : l'éclair qu'elle remplace était à 90 %, ce qu'un dessin
+   plat supporte. Une photo atténuée a seulement l'air terne. */
+.enseigne {
+  position: relative; flex: none;
+  width: 48px; height: 48px;
+}
+.enseigne__logo {
+  width: 100%; height: 100%; border-radius: 50%; display: block;
+}
+
+/* Les étincelles.
+
+   Elles débordent du cercle — c'est tout l'intérêt : une étincelle contenue
+   dans le médaillon ressemble à un défaut d'image, une étincelle qui en sort
+   ressemble à du courant. D'où le conteneur en `position: relative` et les
+   trois filles en absolu, libres de sortir du cadre.
+
+   Trois durées premières entre elles (1,7 / 2,3 / 2,9 s) : elles ne
+   retombent jamais ensemble, et l'œil ne peut pas deviner la suivante. Avec
+   des durées égales, on verrait un clignotant. */
+.enseigne__etincelle {
+  position: absolute; width: 9px; height: 18px;
+  opacity: 0; pointer-events: none;
+  filter: drop-shadow(0 0 4px rgb(var(--jaune-rgb) / .9));
+  will-change: opacity, transform;
+}
+.enseigne__etincelle--a {
+  top: -7px; right: -4px; transform: rotate(18deg);
+  animation: etincelle 1.7s steps(1, end) infinite;
+}
+.enseigne__etincelle--b {
+  bottom: -8px; left: -5px; width: 7px; height: 14px; transform: rotate(-24deg);
+  animation: etincelle 2.3s steps(1, end) .4s infinite;
+}
+.enseigne__etincelle--c {
+  top: 40%; right: -9px; width: 6px; height: 12px; transform: rotate(52deg);
+  animation: etincelle 2.9s steps(1, end) 1.1s infinite;
+}
+
+/* Une étincelle claque, elle ne s'allume pas en fondu : pleine, presque
+   éteinte, pleine, puis rien pendant longtemps. C'est ce « rien » qui fait
+   qu'on la remarque quand elle revient — une étincelle permanente n'est
+   plus qu'un point jaune de plus dans l'en-tête. */
+@keyframes etincelle {
+  0%, 74%   { opacity: 0; }
+  75%       { opacity: 1; }
+  79%       { opacity: .15; }
+  83%       { opacity: .95; }
+  88%       { opacity: .4; }
+  92%, 100% { opacity: 0; }
+}
+
+/* Sans mouvement, pas d'étincelles du tout. Figées, elles resteraient
+   collées au bord du logo comme trois taches jaunes sans raison d'être —
+   ce qui est pire que leur absence. */
+[data-anim='off'] .enseigne__etincelle { animation: none; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .enseigne__etincelle { animation: none; opacity: 0; }
+}
+
+.topbar__bloc { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.topbar__name {
+  font-size: 18px; font-weight: 800; letter-spacing: .01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* La seconde ligne dit l'état de la maison : ouvert, et combien d'articles.
+   C'est ce qu'on regarde en arrivant, et ça évitait jusqu'ici un bandeau
+   séparé qui poussait le catalogue vers le bas. */
+.topbar__sous {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: rgb(var(--cream-rgb) / .42);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.topbar__sous b { color: var(--sauge); font-weight: 800; }
+.topbar__sous b.est-ferme { color: rgb(var(--red-rgb)); }
+.topbar__actions { display: flex; align-items: center; gap: 9px; flex: none; }
+
+/* Bouton discret de la barre : l'accent néon reste au panier. */
+.iconbtn {
+  flex: none; width: 40px; height: 40px; display: grid; place-items: center;
+  color: var(--cream);
+  background: rgba(255, 255, 255, .06);
+  border: var(--line) solid var(--line-soft);
+  border-radius: 12px;
+  transition: transform .12s ease, border-color .16s ease;
+}
+.iconbtn svg { width: 22px; height: 22px; }
+.iconbtn:active { transform: scale(.94); border-color: rgb(var(--neon-rgb) / .6); }
+
+/* Le panier : une pastille qui dit le total, pas une icône avec un compteur
+   suspendu au coin. Le compteur flottant est l'ornement le plus recopié du
+   genre, et il annonce un nombre d'articles — ce qui n'est pas ce qu'on se
+   demande devant un panier. Le montant, si. Panier vide, la pastille
+   disparaît et il ne reste que l'icône. */
+/* La loupe de l'entête. Même gabarit que le panier qui la suit : deux
+   boutons côte à côte de tailles différentes se lisent comme deux niveaux
+   d'importance, alors qu'ils n'en ont qu'un. */
+.findbtn {
+  width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+  border-radius: 50%; border: var(--line) solid var(--line-soft);
+  background: var(--panel); color: var(--cream);
+}
+.findbtn svg { width: 18px; height: 18px; }
+.findbtn[aria-expanded='true'] {
+  color: var(--neon); border-color: rgb(var(--neon-rgb) / .5);
+  background: rgb(var(--neon-rgb) / .12);
+}
+.findbtn:active { background: rgb(var(--cream-rgb) / .1); }
+
+/* Le nombre d'articles reste accessible aux lecteurs d'écran, mais ne
+   s'affiche plus : le montant le remplace à l'œil. */
+@keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.45)} 100%{transform:scale(1)} }
+
+/* Bandeau de fermeture : visible sans masquer le catalogue, on peut
+   préparer son panier et commander à la réouverture. */
+.closed {
+  position: relative; z-index: 2; margin: 0; padding: 13px 18px;
+  text-align: center; font-weight: 800; font-size: 14px; line-height: 1.4;
+  color: var(--gold);
+  background: linear-gradient(180deg, rgb(var(--gold-rgb) / .16), rgb(var(--gold-rgb) / .06));
+  border-bottom: 1px solid rgb(var(--gold-rgb) / .45);
+}
+
+/* ── Page ────────────────────────────────────────────────── */
+.page { position: relative; z-index: 1; padding: 16px 14px calc(28px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
+
+/* ── Bannière ────────────────────────────────────────────── */
+/* ── Le bandeau ──────────────────────────────────────────────
+   La pancarte en tôle qui occupait cette place faisait 218 px : la
+   première carte tombait à 463 px et le premier prix à 655 px, sur un
+   écran qui en fait 844. Autrement dit, un client ouvrait la boutique,
+   lisait un slogan, et devait défiler pour voir ce qu'on vend.
+
+   Le bandeau fait 132 px, bord à bord. Il garde une image forte — le film
+   de l'ouverture, couché — mais il la couche justement : le premier prix
+   remonte à 461 px, et deux produits entiers tiennent à l'écran.
+
+   Bord à bord et non dans la gouttière : une bande d'image qui s'arrête à
+   quatorze pixels du bord redevient une carte, c'est-à-dire l'objet qu'on
+   vient de retirer. */
+.hero {
+  position: relative; overflow: hidden;
+  height: 132px;
+  margin: -16px calc(var(--gutter, 14px) * -1) 0;
+  background: var(--panel-2);
+  border: 0; border-bottom: 1px solid rgb(var(--jaune-rgb) / .3);
+}
+.hero__film {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover;
+  /* Le sujet du plan est au centre haut : un cadrage centré lui coupait le
+     front. On remonte le point d'ancrage plutôt que de rogner l'image. */
+  object-position: 50% 34%;
+  pointer-events: none;
+}
+/* Le voile part de la gauche, là où se pose le texte, et laisse l'image
+   respirer à droite. Un voile uniforme éteindrait tout le bandeau pour ne
+   rendre lisibles que trois lignes. */
+.hero__voile {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, rgb(var(--void-rgb) / .92) 0%, rgb(var(--void-rgb) / .45) 54%, transparent 80%),
+    linear-gradient(0deg, rgb(var(--void-rgb) / .5) 0%, transparent 42%);
+}
+.hero__body {
+  position: absolute; inset-inline-start: var(--gutter, 14px); top: 50%;
+  transform: translateY(-50%); z-index: 1; max-width: 62%;
+}
+.hero__title {
+  /* Le 400 était le dernier reste de Bebas Neue, qui n'existait qu'en cette
+     graisse : sur Chakra Petch il donnait un titre plus maigre que le nom de
+     la boutique juste au-dessus, dans la barre. Un bandeau qui pèse moins
+     que l'en-tête qu'il suit n'est pas un titre. */
+  font-size: clamp(26px, 8vw, 32px); line-height: .96;
+  text-transform: uppercase; font-weight: 700; margin: 0;
+  text-shadow: 0 2px 14px rgb(var(--void-rgb) / .9);
+}
+/* Les horaires en jaune d'enseigne : c'est la deuxième chose qu'on vient
+   vérifier après le prix, et la seule information du bandeau qui change. */
+.hero__eyebrow {
+  display: block; margin: 5px 0 0; padding: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--jaune); background: none;
+  text-shadow: 0 1px 10px rgb(var(--void-rgb) / .9);
+}
+.hero__sub {
+  margin: 2px 0 0; font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; color: rgb(var(--cream-rgb) / .8);
+  max-width: none;
+  text-shadow: 0 1px 10px rgb(var(--void-rgb) / .9);
+}
+
+/* ── Catégories ──────────────────────────────────────────── */
+.cats { display: flex; gap: 9px; overflow-x: auto; margin: 16px -14px 0; padding: 4px 14px 10px; scrollbar-width: none; }
+.cats::-webkit-scrollbar { display: none; }
+.cat {
+  flex: none; display: flex; align-items: center; gap: 6px;
+  color: var(--cream);
+  background: rgba(255, 255, 255, .06);
+  border: var(--line) solid var(--line-soft);
+  border-radius: var(--radius); padding: 8px 15px; font-weight: 700; font-size: 13.5px;
+  white-space: nowrap;
+  transition: transform .12s ease, box-shadow .12s ease, background .16s ease, color .16s ease;
+}
+.cat[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--neon);
+  border-color: transparent;
+  box-shadow: none;
+}
+.cat:active { transform: scale(.95); }
+
+/* ── Grille produits ─────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 8px; }
+@media (min-width: 520px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* ── La carte produit ────────────────────────────────────────
+   La boutique dont ce code est issu empilait : vignette carrée en haut,
+   corps de texte en dessous.
+   Ici on superpose — la photo prend toute la carte, et le nom avec le
+   prix viennent se poser par-dessus, sur un bandeau noir. C'est la
+   composition d'un autocollant ou d'un flyer, pas d'une fiche.
+
+   Ce que ça change pour de vrai : la photo est deux fois plus grande à
+   surface égale, et c'est elle qui vend. Ce que ça coûte : l'accroche
+   de deux lignes ne tient plus, elle est réservée à la fiche. Un nom et
+   un prix suffisent pour décider d'ouvrir. */
+.card {
+  position: relative; display: block;
+  aspect-ratio: 3 / 4;
+  color: var(--cream);
+  background: var(--panel-2);
+  border: var(--line) solid rgb(255 255 255 / .07);
+  border-radius: var(--radius);
+  /* Un liseré clair sur l'arête haute, une ombre portée douce dessous :
+     c'est du béton pris dans la lumière d'un lampadaire. L'ombre dure de
+     trois pixels de la version d'avant était celle d'un bouton d'arcade,
+     elle donnait à la grille l'air d'un jeu. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .1),
+    0 10px 22px rgb(0 0 0 / .45);
+  overflow: hidden; text-align: start; padding: 0;
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+/* L'appui allume le contour plutôt que d'enfoncer la carte : c'est un
+   éclair qui passe sur le panneau, pas une touche qu'on presse. */
+.card:active {
+  transform: scale(.985);
+  border-color: rgb(var(--neon-rgb) / .55);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .1),
+    0 0 0 1px rgb(var(--neon-rgb) / .3),
+    0 0 26px rgb(var(--neon-rgb) / .22);
+}
+
+.card__art {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgb(var(--ink-rgb) / .45);
+  border: 0;
+}
+.card__art img { width: 66%; opacity: .45; }
+
+/* Un onglet encastré dans l'angle, pas une pastille posée dessus.
+   L'étiquette au pochoir d'avant — cadre ambre, coins arrondis, huit
+   pixels de marge — flottait dans le vide en haut de la photo et avait
+   la mine d'un champ de formulaire : c'est la forme la plus faible
+   qu'on puisse donner à une mention. Ici la pastille épouse le coin de
+   la carte et n'a plus de cadre du tout. Ce qui la tient, c'est une
+   arête jaune de trois pixels sur sa gauche — la même lumière que le
+   reste de la boutique — et un éclair devant le mot.
+
+   Le fond reste plein et opaque : le jour où les vraies photos
+   remplaceront les dessins, un libellé clair posé sans fond sur un
+   emballage clair deviendrait illisible, et on ne s'en apercevrait
+   qu'une fois la photo en ligne. */
+.card__badge {
+  position: absolute; top: 0; left: 0; z-index: 3;
+  /* On s'arrête avant le cœur : 34 px de bouton et 8 px de marge. Un
+     libellé long est coupé par les points de suspension plutôt que de
+     passer dessous — deux éléments empilés dans le même coin, c'est
+     l'un des deux qu'on ne peut plus lire. */
+  max-width: calc(100% - 52px); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+  background: rgb(var(--void-rgb) / .92);
+  backdrop-filter: blur(6px);
+  color: var(--cream); font-size: 9.5px; font-weight: 700;
+  letter-spacing: .13em; text-transform: uppercase;
+  padding: 5px 10px 5px 11px;
+  border: 0; border-radius: 0;
+  /* Le coin haut-gauche suit celui de la carte, moins son filet ; le coin
+     bas-droit, le seul qui donne sur la photo, s'arrondit franchement. */
+  border-top-left-radius: calc(var(--radius) - 1px);
+  border-bottom-right-radius: 9px;
+  box-shadow: inset 3px 0 0 var(--jaune);
+}
+/* L'étoile ne va qu'à la vedette.
+
+   Elle dit « c'est ce qui se vend le mieux ». Posée aussi sur « NOUVEAU » et
+   sur « -15 % », elle ne disait plus rien : trois mentions différentes sous
+   le même signe finissent par n'en désigner aucune. Les autres pastilles
+   n'ont que leur mot — l'arête jaune suffit à les tenir.
+
+   Dessinée en découpe plutôt qu'écrite : ★ et ⚡ sont rendus par la police
+   d'emoji sur la plupart des téléphones, qui leur impose sa forme et
+   parfois sa couleur — on ne peut ni les mettre au jaune de l'enseigne ni
+   savoir de quoi ils auront l'air. */
+.card__badge--etoile::before {
+  content: ''; width: 10px; height: 10px; flex: none; background: var(--jaune);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%,
+                     50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+/* Le bandeau du bas. Un dégradé sous lui, pour que le texte tienne même
+   sur une photo claire — sans ça, un nom blanc sur un emballage blanc
+   disparaît, et on ne le découvre que le jour où le vendeur poste cette
+   photo-là. */
+.card__body {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  padding: 26px 10px 9px;
+  display: flex; flex-direction: column; gap: 1px;
+  background: linear-gradient(180deg, transparent, rgb(var(--ink-rgb) / .92) 42%);
+}
+.card__name {
+  /* 1.05 était l'interligne de Bebas Neue : une capitale sans jambage, qu'on
+     peut serrer sans que rien ne se touche. Chakra Petch a des bas de casse
+     et des accents, et deux lignes à 1.05 se collaient. */
+  font-size: 15px; line-height: 1.14; letter-spacing: .01em;
+  text-transform: uppercase;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* L'accroche ne tient pas sur une carte superposée : elle vit dans la
+   fiche, où il y a la place de la lire. */
+.card__short { display: none; }
+/* Le prix a quitté la carte : il ne se lit plus que sur la fiche, où il est
+   entier. Sur un produit à formats, la grille n'affichait que le prix
+   d'entrée précédé d'un « dès » de dix pixels — le client retenait 20 €,
+   ouvrait, trouvait 130 €, et c'est le genre de petit écart qui use la
+   confiance avant même la première commande.
+
+   Le pied ne porte donc plus qu'un nom et un chevron, sur la même ligne :
+   le chevron seul sur sa rangée aurait laissé une bande vide sous le nom.
+   Alignés par le bas, pour que le chevron suive la dernière ligne d'un nom
+   qui en prend deux plutôt que de flotter au milieu. */
+.card__foot {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 6px; margin-top: 0;
+}
+/* Sans cette ligne, un nom long refuse de se couper : un élément de flex
+   ne descend pas sous la largeur de son contenu, et le nom pousserait le
+   chevron hors de la carte. */
+.card__foot .card__name { min-width: 0; }
+/* Le rond « + » ajoutait au panier. Il n'y a plus de panier : une carte
+   mène à sa fiche, et c'est là qu'on commande. Un chevron le dit sans
+   promettre une action qui n'existe pas — un « + » sur une carte annonce
+   un ajout en un geste, et le tenir ensuite pour un simple lien est le
+   genre de petit mensonge qui use la confiance. */
+.card__fleche {
+  flex: none; font-size: 20px; line-height: 1;
+  color: rgb(var(--cream-rgb) / .35);
+  transition: color .14s ease, transform .14s ease;
+}
+.card:active .card__fleche {
+  color: var(--neon); transform: translateX(2px);
+}
+
+.empty { text-align: center; padding: 30px 0; color: var(--muted); }
+/* Quand la zone annonce une panne plutôt qu'une catégorie vide, elle porte
+   plusieurs éléments : on les empile au lieu de les laisser en ligne. */
+.empty:has(strong) {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 24px 16px; line-height: 1.5;
+}
+.empty strong { font-size: 16px; color: var(--cream); }
+.empty__detail {
+  display: block; max-width: 100%; padding: 8px 10px; border-radius: 8px;
+  background: rgb(var(--panel-rgb) / .6); font-size: 11.5px;
+  /* Le serveur explique parfois la panne en plusieurs lignes, chemins de
+     fichiers compris : on les respecte plutôt que de tout écraser. */
+  white-space: pre-line; text-align: start; line-height: 1.5;
+  overflow-wrap: anywhere; opacity: .8;
+}
+
+/* ── Pied de page ────────────────────────────────────────── */
+/* Le pied ne porte plus que l'éclair : les réglages de texte qui restaient
+   ici — taille, interligne, couleur — n'avaient plus de texte à régler, et
+   la marge de huit pixels sous l'image servait à l'écarter d'un paragraphe
+   disparu. */
+.foot { margin-top: 26px; text-align: center; }
+.foot__eclair {
+  width: 30px; margin: 0 auto; opacity: .38;
+  filter: drop-shadow(0 0 10px rgb(var(--jaune-rgb) / .45));
+}
+
+/* ── Panneaux coulissants ────────────────────────────────── */
+.sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; }
+.sheet__backdrop { position: absolute; inset: 0; background: rgb(var(--void-rgb) / .75); backdrop-filter: blur(4px); animation: fade .2s ease; }
+@keyframes fade { from { opacity: 0 } }
+
+.sheet__panel {
+  position: relative; width: 100%; max-width: 640px; margin: 0 auto;
+  max-height: 92vh; display: flex; flex-direction: column;
+  background: var(--night-2);
+  border: var(--line) solid var(--line-soft); border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 36px rgba(0, 0, 0, .5);
+  animation: rise .26s cubic-bezier(.2,.9,.3,1.1);
+}
+@keyframes rise { from { transform: translateY(100%) } }
+
+.sheet__close {
+  position: absolute; top: 12px; right: 12px; z-index: 3;
+  width: 36px; height: 36px; border-radius: 50%;
+  color: var(--cream);
+  background: rgb(var(--ink-rgb) / .6);
+  border: var(--line) solid var(--line-soft);
+  font-size: 15px; font-weight: 800; backdrop-filter: blur(6px);
+}
+.sheet__scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+
+.sheet__bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px calc(12px + var(--safe-bottom));
+  background: rgb(var(--ink-rgb) / .72);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ── Fiche produit ───────────────────────────────────────── */
+/* Le cadre de la fiche. Deux contenus très différents s'y posent : une photo
+   du vendeur, qui doit le remplir, et le dessin par défaut, qui doit flotter
+   au milieu d'une surface sombre. D'où les deux jeux de règles. */
+.pdetail__art {
+  display: grid; place-items: center; padding: 26px 0 20px;
+  /* Bord à bord. La fiche d'origine posait la photo dans une carte arrondie,
+     au milieu de la gouttière : ici c'est une affiche, elle prend toute la
+     largeur de l'écran et se termine sur un rail jaune. */
+  margin: 0 calc(var(--gutter, 14px) * -1);
+  background: rgb(var(--ink-rgb) / .45);
+  border: 0; border-bottom: 1px solid rgb(var(--neon-rgb) / .55);
+  border-radius: 0; overflow: hidden;
+  box-shadow: 0 1px 18px rgb(var(--neon-rgb) / .2);
+}
+/* Le dessin par défaut, et lui seul : `>` est ce qui l'empêche d'atteindre
+   les images de la galerie, qui vivent plus bas dans le même cadre. Sans ce
+   chevron, une photo importée héritait d'un plafond de 200 px et d'une
+   opacité de 55 % — elle s'affichait donc petite et délavée, soit le
+   contraire d'une vitrine. */
+.pdetail__art > img { width: 48%; max-width: 200px; opacity: .55; }
+.pdetail__body { padding: 16px 0 10px; }
+.pdetail__tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.tag {
+  font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  /* Au pochoir, comme les étiquettes des cartes : fond sombre, lettres
+     ambre, un filet. L'aplat bleu cerné d'encre qu'il y avait ici lisait
+     comme du surligneur. */
+  color: var(--gold); background: rgb(var(--void-rgb) / .7);
+  border: 1px solid rgb(var(--gold-rgb) / .45);
+  border-radius: 4px; padding: 4px 10px;
+  letter-spacing: .12em; text-transform: uppercase;
+  box-shadow: none;
+}
+.pdetail__name { font-size: 27px; line-height: 1.1; font-weight: 800; }
+/* La description. Le poids 600 sur une couleur atténuée donnait un pavé
+   uniforme où l'œil n'avait aucune prise : à cette taille, 500 se lit aussi
+   bien et respire. Le reste de la mise en forme vient de ce que le vendeur a
+   tapé — voir `peindreLaDescription`. */
+.pdetail__desc {
+  font-size: 14.5px; line-height: 1.55; margin: 10px 0 0;
+  font-weight: 500; color: var(--muted);
+}
+/* Une ligne libre. Les lignes qui se suivent se serrent, mais pas au point
+   de se confondre : c'est tout le sujet. */
+.pdetail__ligne { margin: 0 0 4px; }
+.pdetail__ligne:last-child { margin-bottom: 0; }
+
+/* Les points, avec leur puce.
+   `list-style: none` et une puce dessinée en `::before` plutôt que celle du
+   navigateur : celle-ci ne se colore pas séparément du texte, et on la veut
+   au jaune d'enseigne. Le retrait est suspendu — une ligne qui passe à la
+   ligne s'aligne sous le texte, pas sous la puce. */
+.pdetail__points {
+  list-style: none; margin: 7px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.pdetail__points li { position: relative; padding-inline-start: 15px; }
+.pdetail__points li::before {
+  content: '•'; position: absolute; inset-inline-start: 2px; top: -1px;
+  color: var(--jaune); font-weight: 700;
+}
+.pdetail__points + .pdetail__ligne { margin-top: 9px; }
+
+/* ── Les formats, en grille ──────────────────────────────────
+   Des pastilles sur une ligne, il fallait les lire de gauche à droite pour
+   comparer quatre prix ; en grille on les embrasse d'un regard, et c'est
+   exactement ce qu'on vient faire ici. Deux colonnes, parce qu'un poids et
+   un prix tiennent dans la moitié d'un écran de téléphone et qu'au-delà les
+   chiffres se serrent. */
+.variants__titre {
+  margin: 20px 0 9px; font-size: 12px; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; color: rgb(var(--cream-rgb) / .5);
+}
+.variants { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 0 0 6px; }
+.variant {
+  color: var(--cream);
+  background: var(--panel);
+  border: var(--line) solid var(--line-soft); border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .06);
+  padding: 12px 14px; font-weight: 600; font-size: 14px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.15;
+  transition: background .16s ease, border-color .16s ease,
+              transform .1s ease, box-shadow .1s ease;
+}
+.variant__poids { font-size: 14.5px; font-weight: 800; }
+/* Le prix en jaune d'enseigne, comme partout ailleurs : c'est la seule
+   couleur réservée à l'information qu'on vient chercher. */
+.variant__prix {
+  font-family: var(--display); font-size: 19px; font-weight: 400;
+  letter-spacing: .02em; color: var(--jaune);
+}
+
+/* Le format choisi : un fond teinté et un liseré, pas un aplat plein. Rempli
+   de vert, il avalait son propre prix — qui est vert lui aussi. */
+/* Le format choisi s'allume au lieu de se remplir : un contour de néon et
+   un souffle froid autour de la plaque. Rempli de bleu, il avalait son
+   propre prix, qui est jaune, et la tuile devenait un surligneur. */
+.variant[aria-pressed="true"] {
+  background: rgb(var(--neon-rgb) / .1);
+  border-color: rgb(var(--neon-rgb) / .7);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .08),
+    0 0 0 1px rgb(var(--neon-rgb) / .3),
+    0 0 22px rgb(var(--neon-rgb) / .22);
+}
+.variant:not([aria-pressed="true"]):active {
+  border-color: rgb(var(--neon-rgb) / .4);
+}
+.variant[disabled] .variant__prix { color: rgb(var(--cream-rgb) / .38); }
+
+/* ── Les caractéristiques ────────────────────────────────── */
+.points { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; }
+.points li {
+  position: relative; padding-inline-start: 17px;
+  font-size: 13.5px; line-height: 1.45; font-weight: 600; color: var(--cream);
+}
+/* Le point vert, aligné sur la première ligne et non centré sur la puce :
+   une caractéristique qui passe à la ligne aurait sinon sa pastille au
+   milieu du vide. */
+.points li::before {
+  content: ''; position: absolute; inset-inline-start: 0; top: .52em;
+  width: 7px; height: 7px; border-radius: 1px; background: var(--neon);
+  transform: rotate(45deg);
+}
+
+
+/* ── Panier ──────────────────────────────────────────────── */
+/* Le titre d'une feuille. Il s'appelait `.cart__title` du temps où le
+   panier était la seule feuille de la boutique ; il ne reste que celle des
+   avis, et elle mérite un nom qui ne parle pas d'un panier disparu. */
+.feuille__titre { font-size: 32px; padding: 20px 16px 4px; }
+
+/* Un nom de produit sans espace ne doit pas sortir de sa carte : le
+   débordement était masqué par la page, donc invisible à la mesure, mais bien
+   là à l'écran. */
+.card__name, .card__short,
+.pdetail__name, .pdetail__desc, .order__items li, .toast {
+  overflow-wrap: anywhere;
+}
+
+.field { display: block; padding: 16px 14px 4px; }
+.field span { font-size: 13px; font-weight: 800; display: block; margin-bottom: 6px; color: var(--muted); }
+.field textarea, .field input, .field select {
+  width: 100%; font: inherit; font-size: 14px; font-weight: 600; color: var(--cream);
+  background: rgb(var(--ink-rgb) / .55); border: var(--line) solid var(--line-soft); border-radius: 14px;
+  padding: 11px 13px; resize: none;
+}
+.field textarea::placeholder, .field input::placeholder { color: rgb(var(--cream-rgb) / .38); }
+.field textarea:focus, .field input:focus, .field select:focus {
+  outline: none; border-color: var(--neon); box-shadow: var(--glow-neon);
+}
+.field select option { background: var(--night-2); color: var(--cream); }
+.field select option:disabled { color: rgb(var(--cream-rgb) / .4); }
+
+/* Une adresse tient en plusieurs lignes : elles se suivent sans intitulé
+   intermédiaire, comme sur une enveloppe. */
+.field input + input, .field input + .champs-deux { margin-top: 7px; }
+
+/* « La même chose » : un raccourci d'habitué, pas une réclame. Il a la forme
+   d'une ligne qu'on touche, pas d'un bouton d'appel à l'action. */
+.reprise {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 0 0 14px; padding: 12px 14px; text-align: start;
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .16), rgb(var(--neon-rgb) / .06));
+  border: 1px solid rgb(var(--neon-rgb) / .4); border-radius: 16px;
+  color: var(--cream); font: inherit;
+}
+.reprise:active { transform: scale(.985); }
+.reprise__icone { font-size: 20px; }
+.reprise__texte { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.reprise__texte b { font-size: 15px; font-weight: 800; }
+.reprise__texte span { color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
+.reprise__fleche { color: var(--neon); font-size: 22px; font-weight: 800; }
+
+/* Le plus gros montant de la boutique : il n'avait aucune couleur et
+   héritait du blanc cassé du texte courant. */
+/* Sur un écran étroit, un libellé de total un peu long poussait le bouton
+   Commander hors de la barre. La barre passe à la ligne plutôt que d'expulser
+   ce sur quoi il faut appuyer. */
+.sheet__bar--cart .btn--grow { min-width: 9rem; }
+@media (max-width: 380px) {
+  .sheet__bar--cart .btn--grow { flex-basis: 100%; }
+}
+
+.mode {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 11px 8px; font-weight: 800; font-size: 14px; color: var(--cream);
+  background: rgba(255, 255, 255, .06);
+  border: var(--line) solid var(--line-soft); border-radius: 14px;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.mode small { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.mode[aria-pressed="true"] {
+  color: var(--ink); background: var(--neon);
+  border-color: transparent; box-shadow: none;
+}
+.mode[aria-pressed="true"] small { color: rgb(var(--ink-rgb) / .75); }
+
+.promo { display: flex; gap: 8px; }
+.promo input { flex: 1; text-transform: uppercase; letter-spacing: .08em; }
+/* Le code se saisit en majuscules, l'invite reste une phrase normale. */
+.promo input::placeholder { text-transform: none; letter-spacing: 0; }
+.promo .btn { flex: none; padding: 0 16px; font-size: 13px; }
+
+/* Le prix barré rassure : on voit ce qu'on aurait payé sans la remise. */
+
+
+/* ── Commande enregistrée ────────────────────────────────── */
+.done { text-align: center; padding: 28px 20px 8px; }
+/* Un peu d'air : serré, l'accent des capitales se fait rogner. */
+/* Le total de la commande, seule ligne en gras du récapitulatif. */
+
+.gate__link {
+  display: block; width: 100%; margin-top: 12px; padding: 6px;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--muted);
+  background: none; border: 0; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* ── Mes commandes ───────────────────────────────────────── */
+.orders { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 20px; }
+.orders__empty { text-align: center; padding: 30px 24px; color: var(--muted); font-weight: 700; }
+
+.order {
+  background: var(--panel);
+  border: var(--line) solid var(--line-soft);
+  border-radius: 18px; padding: 13px 14px; box-shadow: var(--shadow-sm);
+}
+.order__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.order__ref { font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: .02em; }
+.order__status {
+  flex: none; font-size: 11px; font-weight: 800; letter-spacing: .03em;
+  border: 1px solid currentColor; border-radius: var(--radius); padding: 4px 10px;
+}
+.order__status--nouvelle { color: var(--gold); }
+.order__status--confirmee { color: rgb(var(--halo2-rgb)); }
+.order__status--prete { color: var(--neon); }
+.order__status--livree { color: var(--neon); background: rgb(var(--neon-rgb) / .14); }
+.order__status--annulee { color: var(--muted); }
+.order__date { margin: 4px 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.order__items { list-style: none; margin: 0; padding: 0; font-size: 13.5px; font-weight: 700; }
+.order__items li { padding: 2px 0; }
+.order__items small { font-weight: 700; color: var(--muted); }
+/* L'ambre dit « en cours » dans cette liste ; le montant, lui, est un
+   montant, et il suit la même règle que les autres. */
+.order__total {
+  margin: 8px 0 0; font-family: var(--display); font-weight: 400;
+  font-size: 19px; letter-spacing: .03em; color: var(--jaune);
+}
+
+/* ── Toast ───────────────────────────────────────────────── */
+.toast {
+  position: fixed; left: 50%; top: calc(74px + var(--safe-top)); z-index: 90;
+  transform: translateX(-50%);
+  background: rgb(var(--ink-rgb) / .92); color: var(--cream);
+  border: 1px solid rgb(var(--neon-rgb) / .55);
+  /* Le rayon en pilule ne vaut que sur une ligne : avec un nom de produit à
+     rallonge, il transformait le message en disque géant qui masquait tout
+     le panier. On borne le texte à trois lignes et on arrondit sobrement. */
+  border-radius: 16px; padding: 11px 18px; font-weight: 800; font-size: 14px;
+  box-shadow: var(--glow-neon), var(--shadow); animation: rise-fade .3s ease;
+  max-width: min(88vw, 22rem); text-align: center; backdrop-filter: blur(8px);
+  line-height: 1.35; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* `display: -webkit-box` l'emporterait sur le display:none de [hidden]. */
+.toast[hidden] { display: none !important; }
+@keyframes rise-fade { from { transform: translate(-50%, -14px); opacity: 0 } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ── Ruptures de stock ───────────────────────────────────── */
+.card--soldout .card__art { background: linear-gradient(180deg, rgb(var(--ink-rgb) / .5), rgb(var(--ink-rgb) / .8)); }
+.card--soldout .card__art img { filter: grayscale(1); opacity: .38; }
+.card--soldout .card__fleche { color: rgb(var(--cream-rgb) / .2); }
+/* Épuisé : l'onglet s'éteint. Il garde sa forme — c'est la même mention,
+   au même endroit — mais l'arête et l'éclair passent au gris, parce
+   qu'il n'y a plus rien à allumer. */
+.card__badge--out { background: rgb(var(--ink-rgb) / .9); color: var(--muted); box-shadow: inset 3px 0 0 rgb(var(--cream-rgb) / .35); }
+.card__badge--out::before { background: rgb(var(--cream-rgb) / .35); }
+/* Sans étoile, le mot se recolle à l'arête : l'espace réservé au signe
+   laisserait un décalage que rien ne justifie. */
+.card__badge:not(.card__badge--etoile) { padding-inline-start: 10px; gap: 0; }
+
+.variant[disabled] {
+  background: rgba(255, 255, 255, .03); color: rgb(var(--cream-rgb) / .38);
+  border-style: dashed; box-shadow: none; pointer-events: none;
+}
+.variant[disabled] small { color: inherit; }
+
+
+/* ── Photos ──────────────────────────────────────────────── */
+/* Une vraie photo remplit son cadre au lieu de flotter dans le halo, avec
+   un voile sombre en haut pour que la pastille reste lisible. */
+.card__art--photo, .card__art--video { background: rgb(var(--ink-rgb) / .6); overflow: hidden; }
+.card__art--photo img { width: 100%; height: 100%; object-fit: cover; filter: none; }
+.card__art--photo::after, .card__art--video::after {
+  content: ''; position: absolute; inset: 0 0 55% 0; pointer-events: none;
+  background: linear-gradient(180deg, rgb(var(--ink-rgb) / .55), transparent);
+}
+
+/* Une vidéo en vitrine : même cadre qu'une photo. Elle ne reçoit aucun clic —
+   la carte entière doit rester le bouton qui ouvre la fiche. */
+.card__video {
+  width: 100%; height: 100%; object-fit: cover;
+  pointer-events: none; background: rgb(var(--ink-rgb) / .7);
+}
+/* La pastille dit « vidéo » même immobile : sur un système qui demande moins de
+   mouvement, la vitrine montre la première image et rien ne bouge. */
+.card__film {
+  position: absolute; bottom: 8px; inset-inline-end: 8px; z-index: 2;
+  display: grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 999px;
+  background: rgb(var(--ink-rgb) / .72); color: var(--cream);
+  font-size: 10px; padding-inline-start: 2px; pointer-events: none;
+}
+.card--soldout .card__video { filter: grayscale(1); opacity: .38; }
+
+/* ══ Animations et widgets ═══════════════════════════════════
+   Tout ce bloc est suspendu par `[data-anim='off']`, que pose la boutique
+   quand la fonctionnalité est éteinte ou que le système demande moins de
+   mouvement. Rien ne disparaît alors : les éléments sont simplement là,
+   immobiles. Une animation ne doit jamais être ce qui rend une chose
+   visible. */
+
+/* ── Apparition des cartes, en cascade ───────────────────── */
+
+/* Le décalage vient d'une variable posée par le script : une règle par carte
+   serait ingérable, et `nth-child` figerait le nombre de produits. */
+.card--entre {
+  animation: carte-entre .34s cubic-bezier(.22, .9, .3, 1) backwards;
+  animation-delay: calc(var(--rang, 0) * 42ms);
+}
+@keyframes carte-entre {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+}
+
+/* ── L'article qui s'envole vers le panier ───────────────── */
+
+/* Une copie de la vignette, posée en `fixed` le temps du vol, puis retirée.
+   `pointer-events: none` : elle traverse l'écran, elle ne doit rien bloquer. */
+
+/* La pastille du panier a déjà son `pop` : on ne l'empile pas, on la laisse
+   dire « c'est arrivé » au moment où la vignette la rejoint. */
+
+/* ── Squelette de chargement ─────────────────────────────── */
+
+/* Mieux qu'un écran vide : la grille montre sa forme pendant que le catalogue
+   arrive, donc l'attente paraît courte et l'écran ne saute pas au moment où
+   les vraies cartes remplacent les fausses. */
+.squelette {
+  border-radius: var(--radius); border: 1px solid var(--line-soft);
+  background: rgb(var(--panel-rgb) / .35);
+  aspect-ratio: 3 / 4; position: relative; overflow: hidden;
+}
+.squelette::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgb(var(--cream-rgb) / .07) 50%, transparent 80%);
+  animation: luire 1.4s linear infinite;
+}
+@keyframes luire { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* ── Widget : l'état de la boutique ──────────────────────── */
+
+.statut {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 14px 10px; padding: 8px 12px; border-radius: 999px;
+  border: 1px solid var(--line-soft); background: rgb(var(--panel-rgb) / .5);
+  font-size: 12.5px; font-weight: 800;
+}
+.statut__pastille {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--neon); box-shadow: 0 0 0 0 rgb(var(--neon-rgb) / .6);
+  animation: pulse-statut 2.4s ease-out infinite;
+}
+.statut--ferme .statut__pastille { background: rgb(var(--red-rgb)); animation: none; }
+.statut--ferme { border-color: rgb(var(--red-rgb) / .45); }
+@keyframes pulse-statut {
+  0%   { box-shadow: 0 0 0 0 rgb(var(--neon-rgb) / .55); }
+  70%  { box-shadow: 0 0 0 7px rgb(var(--neon-rgb) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--neon-rgb) / 0); }
+}
+.statut__texte { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statut__compte { color: var(--muted); font-weight: 700; }
+
+/* ── Widget : la progression vers un palier ──────────────── */
+
+.jauge { margin: 10px 0 2px; }
+
+/* ── Quand le mouvement n'est pas souhaité ───────────────── */
+
+/* Deux raisons de tout suspendre : le vendeur a coupé la fonctionnalité, ou
+   le système du client demande moins de mouvement — un réglage qu'on ne
+   discute pas, il est souvent posé pour raison médicale. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}
+[data-anim='off'] .card--entre { animation: none; }
+[data-anim='off'] .vue { animation: none; }
+[data-anim='off'] .tabbar__curseur { transition: none; }
+[data-anim='off'] .statut__pastille { animation: none; }
+[data-anim='off'] .squelette::after { animation: none; }
+
+/* ── Galerie de la fiche produit ─────────────────────────── */
+
+/* Un défilement horizontal aimanté plutôt qu'un carrousel en JavaScript : le
+   glissement du doigt est celui du système, donc fluide, et il marche même si
+   le script tombe. Les flèches ne servent qu'à la souris. */
+.galerie { position: relative; width: 100%; }
+.galerie__piste {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.galerie__piste::-webkit-scrollbar { display: none; }
+/* `relative` n'est pas un détail d'implantation : sans lui, les pastilles
+   d'une case se positionnaient par rapport à la galerie entière. Une galerie
+   dont la première vue est une photo et la seconde une vidéo affichait donc
+   « ▶ Vidéo » sur la photo, et l'étiquette de format d'une case sur la
+   voisine. Chaque case porte maintenant ce qui la concerne. */
+.galerie__media {
+  position: relative;
+  flex: 0 0 100%; scroll-snap-align: center;
+  display: grid; place-items: center; background: rgb(var(--ink-rgb) / .55);
+}
+/* Une proportion plutôt qu'une hauteur fixe : 250 px donnaient une bande
+   étroite sur un grand téléphone et une image plus haute que large sur un
+   petit. Le 4/3 tient sur les deux, et c'est aussi celui du cadre d'une
+   fiche sans galerie — passer d'un produit à l'autre ne fait plus sauter
+   la page. */
+.galerie__media img, .galerie__media video {
+  width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+}
+/* La vidéo garde ses contrôles : on ne réinvente pas un lecteur. */
+.galerie__media video { background: #000; }
+
+.galerie__fleche {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 34px; height: 34px; border-radius: 50%; border: 0;
+  background: rgb(var(--ink-rgb) / .62); color: var(--cream);
+  font-size: 20px; line-height: 1; backdrop-filter: blur(4px);
+}
+.galerie__fleche--gauche { inset-inline-start: 8px; }
+.galerie__fleche--droite { inset-inline-end: 8px; }
+/* Sur un écran tactile, le doigt suffit : les flèches masqueraient l'image. */
+@media (hover: none) { .galerie__fleche { display: none; } }
+
+.galerie__points {
+  position: absolute; left: 0; right: 0; bottom: 8px; z-index: 2;
+  display: flex; justify-content: center; gap: 6px; pointer-events: none;
+}
+.galerie__point {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgb(var(--cream-rgb) / .4); transition: background .2s, width .2s;
+}
+.galerie__point[aria-selected='true'] { background: var(--neon); width: 18px; border-radius: 4px; }
+
+/* La pastille « vidéo » dit ce qui attend, avant même de lancer la lecture. */
+.galerie__type {
+  position: absolute; top: 8px; inset-inline-start: 8px; z-index: 2;
+  padding: 3px 8px; border-radius: 999px;
+  background: rgb(var(--ink-rgb) / .72); color: var(--cream);
+  font-size: 11px; font-weight: 800; letter-spacing: .03em;
+}
+
+/* Quand la galerie est là, le décor de l'illustration n'a plus lieu d'être. */
+.pdetail__art:has(.galerie:not([hidden])) { padding: 0; overflow: hidden; }
+.pdetail__art:has(.galerie:not([hidden])) > #pImage { display: none; }
+
+/* Une photo importée remplit le cadre, sans marge et à pleine opacité.
+   L'opacité n'est pas un détail : le dessin par défaut est volontairement
+   effacé pour ne pas se disputer l'attention avec les vraies photos, et une
+   photo qui héritait de cette règle s'affichait délavée — exactement le
+   contraire de ce qu'on veut d'une vitrine.
+
+   Le rapport 4/3 plutôt qu'une hauteur fixe : sur un grand téléphone,
+   250 px donnaient une bande étroite, et sur un petit, une photo plus haute
+   que large. La proportion, elle, tient sur les deux. */
+.pdetail__art--photo { padding: 0; }
+.pdetail__art--photo > img {
+  width: 100%; max-width: none; height: auto; aspect-ratio: 4 / 3;
+  object-fit: cover; opacity: 1; filter: none;
+}
+
+
+/* ── Avis ─────────────────────────────────────────────────────
+   Les étoiles portent l'or de l'affiche, pas le néon : le néon
+   veut dire « touche ici » partout ailleurs dans la boutique, et
+   une note n'est pas un bouton. La seule qui en soit un — celle
+   de la fiche produit — le dit par son soulignement. */
+
+.reprise--avis {
+  background: linear-gradient(180deg, rgb(var(--gold-rgb) / .16), rgb(var(--gold-rgb) / .05));
+  border-color: rgb(var(--gold-rgb) / .38);
+}
+.reprise--avis .reprise__fleche { color: var(--gold); }
+
+/* La note sur une carte du catalogue : discrète, sur une ligne. */
+.card__note {
+  display: block; margin-top: 3px;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .04em;
+  color: var(--gold);
+}
+.card__note small { color: var(--muted); font-weight: 700; letter-spacing: 0; }
+
+/* La note de la fiche produit, qui descend jusqu'aux avis. */
+.note--lien {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  margin: 0 0 8px; padding: 0; border: 0; background: none;
+  color: var(--gold); font: inherit; cursor: pointer;
+}
+.note__etoiles { font-size: 15px; letter-spacing: .06em; }
+.note__chiffre { font-size: 15px; font-weight: 800; }
+.note__nombre {
+  font-size: 12.5px; font-weight: 700; color: var(--muted);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+
+.avis { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+.avis__titre {
+  margin: 0 0 12px; font-size: 12.5px; font-weight: 800;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .07em;
+}
+
+/* La répartition : ce que la moyenne cache. */
+.avis__barres { margin-bottom: 16px; }
+.avis__barre { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.avis__barre-note { width: 2.1rem; font-size: 11.5px; font-weight: 800; color: var(--gold); }
+.avis__barre-piste {
+  flex: 1; height: 6px; border-radius: 999px;
+  background: rgb(var(--cream-rgb) / .08); overflow: hidden;
+}
+.avis__barre-plein { display: block; height: 100%; background: rgb(var(--gold-rgb) / .7); }
+.avis__barre-nombre {
+  width: 1.6rem; text-align: end;
+  font-size: 11.5px; font-weight: 700; color: var(--muted);
+}
+
+.avis__liste { list-style: none; margin: 0; padding: 0; }
+.avis__item { padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.avis__item:first-child { border-top: 0; }
+.avis__tete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.avis__etoiles { color: var(--gold); font-size: 13px; letter-spacing: .06em; }
+.avis__qui { font-size: 13.5px; font-weight: 800; }
+.avis__quand { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-inline-start: auto; }
+.avis__texte { margin: 6px 0 0; font-size: 13.5px; line-height: 1.5; }
+.avis__reponse {
+  margin-top: 8px; padding: 9px 11px; border-radius: 12px;
+  background: rgb(var(--neon-rgb) / .07); border-inline-start: 2px solid rgb(var(--neon-rgb) / .5);
+  font-size: 13px; line-height: 1.45;
+}
+.avis__reponse b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--neon); }
+.avis__reponse p { margin: 3px 0 0; }
+
+/* Donner son avis : une ligne par produit, cinq boutons. */
+.avis__intro { margin: 0 0 16px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.avis__facultatif {
+  padding: 1px 7px; border-radius: var(--radius); font-size: 10.5px; letter-spacing: .04em;
+  color: var(--muted); background: rgb(var(--cream-rgb) / .07); text-transform: none;
+}
+.avis__note-vie { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+.notation {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line-soft);
+}
+.notation:first-child { border-top: 0; padding-top: 0; }
+.notation__nom { flex: 1 1 8rem; min-width: 0; font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.notation__nom small { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.notation__etoiles { display: flex; gap: 2px; }
+.notation__etoile {
+  padding: 4px 3px; border: 0; background: none; cursor: pointer;
+  /* Une étoile éteinte reste lisible : trop pâle, on ne sait plus qu'on peut
+     appuyer dessus. */
+  color: rgb(var(--cream-rgb) / .28); font-size: 27px; line-height: 1;
+}
+.notation__etoile.est-pleine { color: var(--gold); }
+.notation__etoile:active { transform: scale(.88); }
+
+#avisTexte {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  padding: 11px 13px; border-radius: 13px;
+  font: inherit; font-size: 15px; color: var(--cream);
+  background: rgb(var(--cream-rgb) / .05); border: 1px solid var(--line-soft);
+}
+#avisTexte:focus { outline: none; border-color: rgb(var(--neon-rgb) / .5); }
+
+/* Signé ou anonyme : deux choix côte à côte, jamais une case à cocher —
+   « publier mon prénom » décoché par erreur n'est pas récupérable. */
+.signature { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.signature__choix {
+  padding: 10px 12px; text-align: start; border-radius: 13px;
+  background: rgb(var(--cream-rgb) / .05); border: 1px solid var(--line-soft);
+  color: var(--cream); font: inherit;
+}
+.signature__choix b { display: block; font-size: 13.5px; font-weight: 800; }
+.signature__choix small { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 600; color: var(--muted); line-height: 1.35; }
+.signature__choix[aria-pressed="true"] {
+  background: rgb(var(--neon-rgb) / .12); border-color: rgb(var(--neon-rgb) / .55);
+}
+.signature__choix[aria-pressed="true"] b { color: var(--neon); }
+
+/* ── Favoris ──────────────────────────────────────────────────
+   Le cœur porte le rouge, seul endroit de la boutique où il ne
+   veut pas dire « erreur » : il est posé sur l'image, jamais
+   dans le corps de la carte, pour rester atteignable au pouce
+   sans pousser le prix. */
+.card__coeur, .pdetail__coeur {
+  position: absolute; top: 8px; inset-inline-end: 8px; z-index: 2;
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  font-size: 17px; line-height: 1;
+  color: rgb(var(--cream-rgb) / .55);
+  background: rgb(var(--ink-rgb) / .55); border: 1px solid rgb(var(--cream-rgb) / .18);
+  backdrop-filter: blur(6px);
+}
+.card__coeur.est-favori, .pdetail__coeur.est-favori {
+  color: var(--red); border-color: rgb(var(--red-rgb) / .55);
+  background: rgb(var(--red-rgb) / .16);
+}
+.card__coeur:active, .pdetail__coeur:active { transform: scale(.86); }
+.pdetail__coeur { position: absolute; top: -46px; inset-inline-end: 0; width: 38px; height: 38px; font-size: 19px; }
+.pdetail__body { position: relative; }
+
+/* ── Profil ───────────────────────────────────────────────── */
+.profil__qui { margin: -6px 0 14px; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+.profil__onglets {
+  display: flex; gap: 6px; margin-bottom: 16px;
+  padding: 4px; border-radius: 14px;
+  background: rgb(var(--cream-rgb) / .05); border: 1px solid var(--line-soft);
+}
+.profil__onglet {
+  flex: 1; padding: 9px 6px; border: 0; border-radius: 11px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 800;
+  color: var(--muted); background: transparent;
+}
+.profil__onglet[aria-selected="true"] {
+  color: var(--ink); background: var(--neon);
+}
+.profil__compte {
+  display: inline-block; margin-inline-start: 5px; padding: 0 6px; border-radius: var(--radius);
+  font-size: 11px; background: rgb(var(--ink-rgb) / .22);
+}
+.profil__onglet[aria-selected="false"] .profil__compte { background: rgb(var(--cream-rgb) / .12); }
+.profil__intro { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.profil__stop {
+  margin: 14px 0 0; padding: 11px 13px; border-radius: 13px;
+  font-size: 12.5px; line-height: 1.5;
+  background: rgb(var(--red-rgb) / .1); border: 1px solid rgb(var(--red-rgb) / .4);
+}
+
+.favoris { display: flex; flex-direction: column; gap: 10px; }
+.favori {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  padding: 10px; border-radius: 16px; cursor: pointer;
+  background: rgb(var(--panel-rgb) / .5); border: 1px solid var(--line-soft);
+}
+/* Même règle pour les deux : la vignette d'un favori est une photo ou une
+   vidéo selon ce que le produit a, et le carré ne change pas pour autant. */
+.favori__image { width: 58px; height: 58px; border-radius: 12px; object-fit: cover; flex: none; }
+video.favori__image { display: block; background: rgb(var(--ink-rgb) / .45); }
+.favori__corps { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.favori__nom { font-size: 14.5px; font-weight: 800; overflow-wrap: anywhere; }
+.favori__etat { font-size: 11.5px; font-weight: 700; color: var(--red); }
+.favori__coeur {
+  flex: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; font-size: 17px;
+  color: var(--red); background: rgb(var(--red-rgb) / .14);
+  border: 1px solid rgb(var(--red-rgb) / .45);
+}
+.favori__coeur:active { transform: scale(.86); }
+
+/* Les alertes : une ligne entière qui bascule, pas une case à cocher de 12 px
+   qu'on rate une fois sur deux au pouce. */
+.alertes { display: flex; flex-direction: column; gap: 10px; }
+.alerte {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: start;
+  padding: 13px 14px; border-radius: 15px; cursor: pointer; font: inherit;
+  color: var(--cream);
+  background: rgb(var(--panel-rgb) / .5); border: 1px solid var(--line-soft);
+}
+.alerte__texte { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.alerte__texte b { font-size: 14.5px; font-weight: 800; }
+.alerte__texte small { font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--muted); }
+.alerte__bouton {
+  flex: none; position: relative; width: 46px; height: 27px; border-radius: 999px;
+  background: rgb(var(--cream-rgb) / .14); border: 1px solid var(--line-soft);
+  transition: background .16s ease;
+}
+.alerte__bouton::after {
+  content: ''; position: absolute; top: 2px; inset-inline-start: 2px;
+  width: 21px; height: 21px; border-radius: 50%;
+  background: rgb(var(--cream-rgb) / .8);
+  transition: transform .16s ease, background .16s ease;
+}
+.alerte[aria-checked="true"] { border-color: rgb(var(--neon-rgb) / .5); }
+.alerte[aria-checked="true"] .alerte__bouton { background: var(--neon); }
+.alerte[aria-checked="true"] .alerte__bouton::after { transform: translateX(19px); background: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  .alerte__bouton, .alerte__bouton::after { transition: none; }
+}
+
+/* La pastille du profil : elle dit qu'il y a quelque chose à y voir. */
+.iconbtn { position: relative; }
+.iconbtn__pastille {
+  position: absolute; top: -3px; inset-inline-end: -3px; min-width: 17px; height: 17px;
+  padding: 0 4px; border-radius: 999px;
+  display: grid; place-items: center;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  color: var(--ink); background: var(--neon);
+}
+
+/* Le format auquel un média est rattaché. En bas à gauche, en face de la
+   pastille « Vidéo » qui occupe le haut : les deux peuvent coexister sur la
+   même vidéo, et se superposer les rendrait illisibles toutes les deux. */
+.galerie__format {
+  position: absolute; bottom: 8px; inset-inline-start: 8px; z-index: 2;
+  padding: 3px 9px; border-radius: var(--radius);
+  background: var(--neon); color: var(--ink);
+  font-size: 11.5px; font-weight: 800; letter-spacing: .03em;
+}
+
+/* ── L'ouverture : le voile de chargement ────────────────────
+   Trois secondes au plus, souvent une demie. Ce qu'on y met compte :
+   un écran noir laisse croire à une panne, une barre qui progresse ment
+   sur une durée qu'on ne connaît pas. Un anneau qui tourne autour du
+   logo dit seulement « ça vient », ce qui est exactement ce qu'on sait.
+   Le voile se retire en fondu ; il ne clignote donc pas quand le
+   catalogue arrive en 80 ms. */
+.charge {
+  position: fixed; inset: 0; z-index: 120;
+  overflow: hidden;
+  /* Le fond reste sous la vidéo : c'est lui qu'on voit si le fichier n'arrive
+     pas, et c'est lui qui borde le film sur un écran plus large que 9/16. */
+  background: radial-gradient(120% 90% at 50% 20%, rgb(var(--night2-rgb)), rgb(var(--void-rgb)));
+  transition: opacity .32s ease, visibility .32s;
+}
+
+/* ── Le film de la ruelle ────────────────────────────────────
+   Il est en 9/16 natif, donc il remplit le téléphone sans traitement. Le
+   `cover` finit le travail sur les proportions qui ne sont pas exactement
+   9/16 — un téléphone plus allongé, un pli ouvert : l'image est rognée sur
+   les côtés plutôt que bordée de noir. */
+.charge__film {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center;
+  /* Aucune commande, aucun appui : c'est un décor, pas un lecteur. */
+  pointer-events: none;
+}
+/* Le voile. Sans lui, « Original68 » en blanc cassé se pose sur une ruelle
+   claire par endroits et devient illisible une image sur trois — un texte
+   sur une vidéo doit tenir sur toutes les images, pas sur la moyenne. */
+.charge__voile {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgb(var(--void-rgb) / .3) 0%, transparent 18%),
+    linear-gradient(0deg, rgb(var(--void-rgb) / .92) 0%, rgb(var(--void-rgb) / .5) 16%, transparent 34%);
+}
+/* Le lettrage descend en bas : au centre il couvrait le personnage, qui est
+   exactement ce qu'on veut montrer. */
+.charge__texte-zone {
+  position: absolute; left: 0; right: 0;
+  bottom: calc(40px + var(--safe-bottom));
+  display: grid; justify-items: center; gap: 14px;
+  padding: 0 40px; text-align: center;
+}
+
+/* La jauge du plancher. Une ligne fine, pas un anneau qui tourne : un
+   anneau dit « ça travaille » et ne dit pas combien de temps, alors qu'ici
+   la durée est connue d'avance et c'est précisément ce qu'on veut annoncer.
+
+   L'animation est en `linear` et dure exactement ce que dure le plancher :
+   une courbe d'accélération ferait mentir la barre sur la fin. */
+.charge__jauge {
+  width: 100%; max-width: 220px; height: 2px; border-radius: 2px;
+  background: rgb(var(--cream-rgb) / .16); overflow: hidden;
+}
+/* La barre part à zéro et c'est le script qui lance l'animation, avec la
+   durée du plancher. Écrite ici en dur, elle démarrait au parsage de cette
+   feuille — soit une bonne seconde avant que le module ne fixe l'instant
+   d'ouverture — et elle arrivait au bout pendant que l'écran était encore
+   là : une barre pleine sous un écran qui ne part pas, c'est le signe d'une
+   application bloquée. Les deux horloges sont maintenant la même, et la
+   durée n'est plus écrite à deux endroits. */
+.charge__jauge span {
+  display: block; width: 0; height: 100%; position: relative;
+  background: var(--neon);
+  box-shadow: 0 0 10px rgb(var(--neon-rgb) / .8);
+}
+/* La tête de la barre grésille. Une barre qui avance d'un bloc uni dit la
+   durée ; celle-ci dit en plus que c'est du courant qui la remplit, ce qui
+   est toute la question de cette boutique. L'effet vit au bout du trait et
+   pas sur toute sa longueur : un clignotement sur deux cent vingt pixels
+   attire le regard loin du film. */
+.charge__jauge span::after {
+  content: ''; position: absolute; inset-inline-end: -3px; top: -2px;
+  width: 7px; height: 6px; border-radius: 50%;
+  background: var(--jaune);
+  box-shadow: 0 0 9px 2px rgb(var(--jaune-rgb) / .9);
+  animation: charge-tete .5s steps(3, end) infinite;
+}
+@keyframes charge-jauge { to { width: 100%; } }
+@keyframes charge-tete {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .45; transform: scale(.72); }
+}
+
+/* L'éclair de l'écran d'ouverture.
+
+   L'anneau qui tournait et l'éclair qui se déchargeait avaient été retirés
+   parce que deux choses en mouvement sur le même écran se disputent le
+   regard. L'argument tient, et c'est pourquoi celui-ci ne se pose sur rien :
+   il blanchit tout l'écran pendant un sixième de seconde, exactement comme
+   le fait l'orage du film. Ce n'est pas un deuxième objet à regarder, c'est
+   le même orage — et il passe sous le texte, qui reste lisible pendant.
+
+   `mix-blend-mode: screen` plutôt qu'un voile blanc à faible opacité : sur
+   une ruelle déjà sombre, un voile grisonne l'image au lieu de l'éclairer. */
+.charge::after {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  pointer-events: none; opacity: 0;
+  background: linear-gradient(180deg, rgb(215 238 255 / .85), rgb(180 220 255 / .25) 46%, transparent 78%);
+  mix-blend-mode: screen;
+}
+/* Une montée nette, une rechute, un second éclat plus faible, puis
+   l'extinction — c'est la forme d'un vrai éclair. En `steps()`, les mêmes
+   valeurs sautaient d'un palier à l'autre et donnaient un clignotement
+   d'écran cassé plutôt qu'un orage.
+
+   Deux éclats en seize centièmes, et le suivant deux secondes plus tard :
+   dans n'importe quelle fenêtre d'une seconde on reste sous les trois
+   flashs au-delà desquels un écran devient dangereux pour les personnes
+   photosensibles. Ceux qui ont demandé moins de mouvement n'en voient
+   aucun, c'est la règle plus bas. */
+.charge--foudre::after { animation: charge-foudre .16s ease-out 1; }
+@keyframes charge-foudre {
+  0%   { opacity: 0; }
+  14%  { opacity: 1; }
+  38%  { opacity: .12; }
+  58%  { opacity: .5; }
+  100% { opacity: 0; }
+}
+/* Le texte et la jauge passent devant l'éclair : c'est le décor qui
+   s'illumine, pas l'information qui s'efface. */
+.charge__texte-zone { z-index: 2; }
+
+/* Les phrases se relaient. Chacune monte de six pixels en apparaissant :
+   sans ce mouvement, le remplacement passe pour un défaut d'affichage. */
+.charge__texte { transition: opacity .28s ease, transform .28s ease; }
+.charge__texte--entre { animation: charge-phrase .34s ease both; }
+@keyframes charge-phrase {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Sans mouvement, le film ne joue pas et le plancher ne s'applique pas :
+   l'écran part aussitôt, la jauge n'aurait rien à annoncer. */
+[data-anim='off'] .charge__jauge { display: none; }
+[data-anim='off'] .charge::after,
+[data-anim='off'] .charge__jauge span::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .charge__jauge { display: none; }
+  /* Un écran qui blanchit quatre fois en un sixième de seconde est
+     précisément ce que ce réglage demande d'éviter, et il est souvent posé
+     pour raison médicale. */
+  .charge::after, .charge__jauge span::after { display: none; }
+  .charge__texte, .charge__texte--entre { animation: none; transition: none; }
+}
+.charge[hidden] {
+  display: grid !important;   /* on le fait disparaître en fondu, pas d'un coup */
+  opacity: 0; visibility: hidden; pointer-events: none;
+}
+/* L'anneau qui tournait et l'éclair qui se déchargeait ont disparu avec le
+   film : deux choses qui bougent sur le même écran se disputent le regard,
+   et c'est la vidéo qu'on est censé regarder. Le grand « Original68 » est
+   parti avec eux — le film porte déjà le nom, gravé sur la chaîne, et le
+   répéter en gros juste dessous couvrait l'image pour ne rien apprendre. */
+.charge__texte {
+  margin: 0; font-size: 13px; font-weight: 600;
+  letter-spacing: .04em; color: rgb(var(--cream-rgb) / .78);
+  text-shadow: 0 1px 10px rgb(var(--void-rgb) / .9);
+}
+
+/* Le film s'arrête depuis le script, pas depuis la feuille de style : on ne
+   met pas une vidéo en pause en CSS. Il reste alors sur son affiche, qui est
+   la première image — l'écran d'ouverture garde donc son image, il cesse
+   seulement de bouger. */
+@media (prefers-reduced-motion: reduce) {
+  .charge { transition: none; }
+}
+
+/* ══ La barre du bas et ses quatre vues ═══════════════════════
+   Une seule page qui défilait est devenue quatre écrans. Ce qui
+   change vraiment : le profil et le contact existaient déjà, mais
+   derrière une icône de 40 px que personne ne touchait. Une place
+   nommée dans une barre se voit ; une icône se devine. */
+
+.vue { display: block; }
+
+/* La page laisse la hauteur de la barre sous elle, sinon la dernière
+   carte finit dessous et personne ne peut l'ouvrir. */
+.page { padding-bottom: calc(var(--tabbar-h, 78px) + 24px); }
+
+/* ── La barre du bas ─────────────────────────────────────────
+   La version d'origine la faisait flotter, détachée du bord, coins ronds
+   et ombre. Ici
+   elle est plaquée au bord et bordée de jaune en haut : une plinthe
+   assumée, comme le bandeau « OPEN 7/7 » d'une devanture.
+
+   L'onglet actif est un bloc jaune plein, texte en encre. Pas de
+   dégradé, pas de transparence : un bloc, comme sur une enseigne. */
+/* ── La pastille de musique ──────────────────────────────────
+   Au-dessus des onglets, à droite : la zone que le pouce atteint sans
+   couvrir le catalogue, et le seul coin que rien d'autre n'occupe. Elle
+   est volontairement petite — c'est une ambiance qu'on propose, pas une
+   fonction de la boutique. */
+/* Les deux pastilles flottantes — musique et langue — partagent une hauteur
+   de départ, pour qu'un seul réglage les déplace ensemble. */
+.juke, .lpastille { --pastille-bas: calc(var(--tabbar-h, 78px) + 14px); }
+/* Sur la fiche produit, la barre de commande prend le bas de l'écran : les
+   deux montent au-dessus plutôt que de se cacher dessous. */
+.juke--haut, .lpastille--haut {
+  --pastille-bas: calc(var(--tabbar-h, 78px) + var(--pbar-h, 68px) + 12px);
+}
+
+/* La pastille de langue : même cercle que celle de la musique, mais elle
+   n'ouvre rien elle-même — le `<select>` posé dessus s'en charge. */
+/* `z-index: 96` : au-dessus des voiles d'entrée (95), en dessous du contrôle
+   d'âge (100), du cadre d'accueil (110) et du rideau (120).
+   La ligne n'est pas arbitraire. La pastille flotte au-dessus des écrans qui
+   RETIENNENT le client — la porte du bot, le calcul, la vérification — parce
+   que c'est précisément là qu'un client qui ne lit pas la langue reste coincé
+   sur des consignes. Elle reste en dessous de ceux qui portent déjà leur
+   propre choix de langue (le cadre d'accueil) ou qui doivent être lus avant
+   tout le reste (le contrôle d'âge) : deux sélecteurs de langue sur le même
+   écran, c'est un de trop. */
+.lpastille {
+  position: fixed; inset-inline-end: 14px; z-index: 96;
+  bottom: var(--pastille-bas);
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgb(var(--night2-rgb) / .92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgb(255 255 255 / .12);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .45);
+  transition: bottom .22s ease, border-color .18s ease, transform .12s ease;
+}
+/* La musique est là : la langue se range au-dessus. Sans elle, la langue
+   prend la place du bas — une pastille seule flottant à mi-hauteur, avec un
+   trou en dessous, se lit comme un bouton qui a perdu son voisin. */
+.lpastille--empilee { bottom: calc(var(--pastille-bas) + 52px); }
+/* Un panneau ouvert se lit : la pastille n'a rien à faire par-dessus. */
+body.feuille-ouverte .lpastille,
+body.feuille-ouverte .juke { display: none; }
+.lpastille:active { transform: scale(.9); }
+.lpastille__drapeau { font-size: 21px; line-height: 1; pointer-events: none; }
+/* Transparent et par-dessus tout le cercle : c'est lui qu'on touche.
+   `opacity: 0` et non `visibility: hidden` — un champ réellement masqué ne
+   reçoit plus l'appui, et la pastille ne ferait rien du tout. */
+.lpastille__liste {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; border: 0; padding: 0; margin: 0;
+  appearance: none; -webkit-appearance: none;
+  background: transparent; color: inherit; font: inherit;
+  cursor: pointer;
+}
+.lpastille:focus-within { border-color: rgb(var(--neon-rgb) / .55); }
+
+.juke {
+  position: fixed; inset-inline-end: 14px; z-index: 34;
+  bottom: var(--pastille-bas);
+  width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  color: rgb(var(--cream-rgb) / .72);
+  background: rgb(var(--night2-rgb) / .92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgb(255 255 255 / .12);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .45);
+  transition: bottom .22s ease, color .18s ease, border-color .18s ease,
+              box-shadow .18s ease, transform .12s ease;
+}
+/* La hauteur de la barre est mesurée à l'affichage : le calcul de
+   `--pastille-bas`, plus haut, suit donc un article épuisé comme un texte
+   grossi par le téléphone. */
+.juke:active { transform: scale(.9); }
+.juke__icone { width: 19px; height: 19px; }
+/* Les deux icônes occupent la même case : on en montre une à la fois, sans
+   que le bouton change de taille au passage. */
+.juke__icone--pause { display: none; }
+.juke--joue .juke__icone--play { display: none; }
+.juke--joue .juke__icone--pause { display: block; }
+.juke--joue {
+  color: var(--jaune);
+  border-color: rgb(var(--jaune-rgb) / .5);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .45), 0 0 16px rgb(var(--jaune-rgb) / .28);
+}
+
+/* Trois barres qui montent et descendent pendant la lecture. Elles vivent
+   derrière l'icône, en anneau autour d'elle : c'est le seul endroit où un
+   mouvement supplémentaire ne dispute rien au catalogue. */
+/* Les barres se rangent sous l'icône, pas par-dessus. Au centre toutes les
+   deux, elles se confondaient avec le symbole pause : on croyait voir un
+   glyphe bizarre, et surtout on ne voyait plus ce que l'appui allait faire.
+   L'icône monte de trois pixels pour leur laisser la place. */
+.juke--joue .juke__icone { transform: translateY(-4px); }
+.juke__onde {
+  position: absolute; left: 0; right: 0; bottom: 8px;
+  display: none; align-items: flex-end; justify-content: center; gap: 2.5px;
+  height: 8px; pointer-events: none; opacity: .75;
+}
+.juke--joue .juke__onde { display: flex; }
+.juke__onde i {
+  width: 2px; height: 4px; border-radius: 1px; background: var(--jaune);
+  animation: juke-onde .9s ease-in-out infinite;
+}
+.juke__onde i:nth-child(2) { animation-delay: .18s; }
+.juke__onde i:nth-child(3) { animation-delay: .36s; }
+@keyframes juke-onde {
+  0%, 100% { height: 3px; opacity: .5; }
+  50%      { height: 8px; opacity: 1; }
+}
+
+/* Le battement d'accueil : qui écoutait la dernière fois le retrouve, sans
+   qu'un son parte tout seul. Deux battements suffisent — au-delà, ce n'est
+   plus un rappel, c'est une réclame. */
+.juke--rappel { animation: juke-rappel 1.3s ease-in-out 2; }
+@keyframes juke-rappel {
+  0%, 100% { box-shadow: 0 6px 18px rgb(0 0 0 / .45), 0 0 0 0 rgb(var(--jaune-rgb) / .5); }
+  50%      { box-shadow: 0 6px 18px rgb(0 0 0 / .45), 0 0 0 7px rgb(var(--jaune-rgb) / 0); }
+}
+
+/* ── Le panneau du lecteur ───────────────────────────────────
+   Ancré sur la pastille, aligné à droite comme elle, et posé au-dessus :
+   sous le pouce, là où il vient d'appuyer. Il reste étroit — c'est un
+   lecteur de fond de boutique, pas une application de musique. */
+.juke__menu {
+  position: fixed; inset-inline-end: 14px; z-index: 36;
+  bottom: calc(var(--tabbar-h, 78px) + 66px);
+  width: 214px; padding: 13px 14px 11px;
+  border-radius: 16px; text-align: center;
+  background: rgb(var(--night2-rgb) / .97);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgb(255 255 255 / .12);
+  box-shadow: 0 14px 34px rgb(0 0 0 / .55);
+  opacity: 0; transform: translateY(8px) scale(.97);
+  transform-origin: 85% 100%;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.juke--haut + .juke__menu,
+.juke__menu--haut { bottom: calc(var(--tabbar-h, 78px) + var(--pbar-h, 68px) + 64px); }
+.juke__menu--ouvert { opacity: 1; transform: none; }
+
+.juke__menu-titre {
+  margin: 0 0 2px; font-size: 13.5px; font-weight: 700; line-height: 1.25;
+  color: var(--cream);
+  /* Deux lignes au plus : un titre à rallonge ferait grandir le panneau
+     d'un morceau à l'autre, et les boutons sauteraient sous le pouce. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+.juke__menu-rang {
+  margin: 0 0 9px; font-size: 11px; font-weight: 700;
+  letter-spacing: .1em; color: var(--muted);
+}
+.juke__menu-gestes { display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+.juke__geste {
+  width: 38px; height: 38px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  color: rgb(var(--cream-rgb) / .85);
+  background: rgb(255 255 255 / .07);
+  border: 1px solid rgb(255 255 255 / .12);
+  transition: transform .12s ease, color .15s ease, background .15s ease;
+}
+.juke__geste svg { width: 18px; height: 18px; }
+.juke__geste:active { transform: scale(.9); }
+.juke__geste[disabled] { opacity: .32; cursor: default; }
+/* La lecture est la commande principale : plus grande, et jaune dès qu'elle
+   joue — le même jaune que la pastille, pour qu'on lise l'état d'un coup. */
+.juke__geste--grand {
+  width: 46px; height: 46px;
+  background: rgb(255 255 255 / .1);
+}
+.juke__geste--grand svg { width: 21px; height: 21px; }
+.juke__geste--grand.juke--joue {
+  color: var(--jaune);
+  border-color: rgb(var(--jaune-rgb) / .5);
+  background: rgb(var(--jaune-rgb) / .12);
+  box-shadow: none;
+}
+/* Les deux icônes partagent la case ; celle qui ne sert pas s'efface. */
+.juke__geste--grand .juke__icone--pause { display: none; }
+.juke__geste--grand.juke--joue .juke__icone--play { display: none; }
+.juke__geste--grand.juke--joue .juke__icone--pause { display: block; }
+.juke__geste--grand .juke__icone { transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .juke__menu { transition: none; }
+}
+
+/* Le titre en cours. Il s'aligne sur la pastille et s'efface tout seul :
+   savoir ce qu'on écoute est utile, le lire en permanence par-dessus les
+   produits ne l'est pas. */
+.juke__titre {
+  position: fixed; inset-inline-end: 66px; z-index: 34;
+  bottom: calc(var(--tabbar-h, 78px) + 25px);
+  margin: 0; max-width: calc(100vw - 96px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 6px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+  color: rgb(var(--cream-rgb) / .9);
+  background: rgb(var(--night2-rgb) / .94);
+  border: 1px solid rgb(255 255 255 / .1);
+  backdrop-filter: blur(12px);
+  opacity: 0; transform: translateX(6px);
+  transition: opacity .24s ease, transform .24s ease;
+  pointer-events: none;
+}
+.juke__titre--vu { opacity: 1; transform: none; }
+
+/* Sans mouvement, les barres s'arrêtent et le rappel ne bat pas : la
+   pastille reste, elle cesse seulement de s'agiter. */
+[data-anim='off'] .juke__onde i,
+[data-anim='off'] .juke--rappel { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .juke__onde i, .juke--rappel { animation: none; }
+  .juke, .juke__titre { transition: none; }
+}
+
+.tabbar {
+  position: fixed; z-index: 40;
+  left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 0; padding: 0 0 var(--safe-bottom);
+  background: rgb(var(--void-rgb) / .94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgb(255 255 255 / .09);
+}
+.tabbar__item {
+  position: relative;
+  display: grid; justify-items: center; gap: 3px;
+  padding: 10px 2px 9px;
+  border: 0; border-radius: 0;
+  background: none; color: rgb(var(--cream-rgb) / .5);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  transition: color .12s ease, background-color .12s ease;
+}
+.tabbar__item svg { width: 21px; height: 21px; }
+.tabbar__item span { line-height: 1; }
+.tabbar__item[aria-selected='true'] {
+  color: var(--neon);
+  text-shadow: 0 0 12px rgb(var(--neon-rgb) / .5);
+}
+.tabbar__item:active { background: rgb(var(--cream-rgb) / .08); }
+
+/* L'onglet ouvert n'est plus un pavé jaune plein : c'est un trait de néon
+   allumé au-dessus de lui, et la lueur froide qui descend dessous. Le pavé
+   retournait l'icône en noir sur jaune et faisait de la barre l'élément le
+   plus voyant de l'écran, devant le catalogue. */
+.tabbar__curseur {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  width: var(--curseur-l, 0px);
+  transform: translateX(var(--curseur-x, 0px));
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .16), transparent 62%);
+  border-radius: 0;
+  transition: transform .2s cubic-bezier(.3, .9, .3, 1), width .2s ease;
+  pointer-events: none;
+}
+.tabbar__curseur::before {
+  content: ''; position: absolute; top: -1px; left: 14%; right: 14%; height: 2px;
+  background: var(--neon);
+  box-shadow: 0 0 12px rgb(var(--neon-rgb) / .9), 0 0 3px rgb(var(--neon-rgb));
+}
+.tabbar__curseur--pose { transition: none; }
+.tabbar__item { position: relative; z-index: 1; }
+
+.tabbar__pastille {
+  position: absolute; top: 5px; inset-inline-end: calc(50% - 20px);
+  min-width: 16px; height: 16px; padding: 0 4px;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 800; line-height: 1;
+  color: #fff; background: rgb(var(--halo2-rgb));
+  border-radius: 999px;
+}
+
+/* ── Les rayons : le catalogue rangé ─────────────────────── */
+.rayons { display: grid; gap: 22px; padding: 4px 0 0; }
+/* L'intitulé d'un rayon tient toute la largeur : nom à gauche, compte à
+   droite, un filet dessous. Le petit trait vertical collé à gauche du titre
+   était l'élément le plus reconnaissable de la boutique qui nous a servi de
+   départ ; celui-ci range le catalogue comme une carte range ses plats. */
+.rayon__tete {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 0 0 12px; padding-bottom: 7px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.rayon__nom {
+  margin: 0; font-size: 13px; font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--gold);
+}
+.rayon__compte {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
+  color: rgb(var(--cream-rgb) / .45);
+}
+.rayon__grille { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+/* ── Contact ─────────────────────────────────────────────── */
+/* ── Contact ─────────────────────────────────────────────────
+   C'était un médaillon centré, un titre centré, un texte centré et une
+   légende entre deux filets — la mise en page de tous les écrans « nous
+   contacter » de la place. Ici tout est aligné à gauche, comme le reste
+   de la boutique : on lit une adresse, on ne contemple pas une vignette.
+   Le titre porte un filet de laiton court au-dessus, seul ornement. */
+.contact { padding: 18px 0 0; }
+.contact__icone {
+  width: 34px; height: 3px; margin: 0 0 18px;
+  background: var(--neon); border: 0; border-radius: 2px;
+  display: block; color: transparent; overflow: hidden;
+}
+.contact__icone svg { display: none; }
+.contact__titre {
+  margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.015em; color: var(--cream);
+}
+.contact__texte {
+  margin: 10px 0 0; max-width: 34ch;
+  font-size: 14px; line-height: 1.55; color: var(--muted);
+}
+/* Une simple ligne d'intitulé, sans les filets qui l'encadraient. */
+.contact__legende {
+  margin: 26px 0 12px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; color: rgb(var(--cream-rgb) / .4);
+}
+.contact__fine { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+/* Les renseignements, en liste plutôt qu'en cartes : trois cartes empilées
+   sous un bouton ressemblaient à trois autres boutons. */
+.contact__infos { margin-top: 26px; border-top: 1px solid var(--line-soft); }
+.contact__info {
+  display: flex; align-items: baseline; gap: 11px;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13.5px; line-height: 1.45; font-weight: 600; color: var(--muted);
+}
+.contact__info b { color: var(--cream); font-weight: 800; }
+
+.btn--block { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; }
+.btn__icone { width: 19px; height: 19px; flex: none; }
+
+/* ── Le profil en pleine page ────────────────────────────── */
+.profil { padding: 6px 0 0; }
+.profil__tete { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+.profil__vignette {
+  width: 58px; height: 58px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 23px; font-weight: 800; color: var(--neon);
+  background: rgb(var(--neon-rgb) / .12);
+  border: 1.5px solid rgb(var(--neon-rgb) / .4);
+}
+.profil__identite { min-width: 0; }
+.profil__nom {
+  margin: 0; font-size: 19px; font-weight: 800; color: var(--cream);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Les quatre compteurs, en bandeau.
+   C'étaient quatre cartes en deux rangées, chacune avec son filet de
+   couleur à gauche et sa tuile d'icône — exactement la disposition qu'on
+   trouve partout ailleurs, et qui mange un tiers de l'écran pour dire
+   quatre nombres. Une seule ligne divisée par des filets les dit aussi
+   bien, laisse les commandes monter dans l'écran, et n'appartient qu'à
+   nous. Les icônes sautent : un chiffre et son mot suffisent. */
+.chiffres {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 20px; padding: 14px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+.chiffre {
+  position: relative; text-align: center; padding: 0 4px;
+}
+/* Un filet entre deux colonnes, jamais avant la première : une bordure
+   posée sur les quatre laisserait un trait pendu au bord de l'écran. */
+.chiffre + .chiffre::before {
+  content: ''; position: absolute; inset-inline-start: 0; top: 2px; bottom: 2px;
+  width: 1px; background: var(--line-soft);
+}
+.chiffre__valeur {
+  display: block; font-size: 21px; font-weight: 800; line-height: 1.1;
+  color: var(--cream); font-variant-numeric: tabular-nums;
+}
+.chiffre__label {
+  display: block; margin-top: 3px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: rgb(var(--cream-rgb) / .42);
+}
+/* Seul le compteur qui porte quelque chose prend la couleur : un panier
+   vide et un panier plein ne doivent pas se ressembler. */
+.chiffre--plein .chiffre__valeur { color: var(--neon); }
+
+/* ══ La fiche produit, en page ════════════════════════════════
+   Elle occupait une feuille qui remontait du bas, en laissant voir le
+   catalogue derrière : une galerie, une description, des formats, des
+   avis et deux carrousels se lisaient alors par un hublot. Ici elle
+   prend l'écran, et la barre d'achat se pose au-dessus des onglets. */
+
+.vue--produit {
+  /* La réserve sous la fiche est celle que la barre d'achat occupe vraiment,
+     mesurée à l'affichage. Écrite en dur, elle se trompait dès que la barre
+     changeait de hauteur — deux lignes de boutons sur un article épuisé, un
+     texte grossi par le téléphone — et le dernier carrousel finissait sous
+     elle : on voyait la vignette d'une suggestion, plus son nom.
+     Les 96 px de secours valent pour l'instant qui sépare l'affichage de la
+     mesure. */
+  padding-bottom: calc(var(--pbar-h, 96px) - var(--tabbar-h, 78px) + 20px);
+}
+
+/* La flèche du retour, en tête de page. Elle double celle de Telegram : la
+   sienne est en haut de l'écran, hors de portée du pouce sur un grand
+   téléphone, et tout le monde ne sait pas qu'elle existe. */
+.pretour {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0 0 12px; padding: 8px 14px 8px 10px;
+  border: var(--line) solid var(--line-soft); border-radius: var(--radius);
+  background: var(--panel); color: var(--muted);
+  font-family: var(--display); font-size: 14px;
+  text-transform: uppercase; letter-spacing: .08em;
+  font-size: 13px; font-weight: 700;
+}
+.pretour__fleche { font-size: 19px; line-height: 1; margin-top: -2px; }
+.pretour:active { background: rgb(var(--cream-rgb) / .09); }
+
+/* La barre d'achat : fixée au-dessus des onglets, jamais dessous. */
+.pbar {
+  /* Plaquée au bord, comme la barre d'onglets sous elle : les deux forment
+     un seul bloc en bas d'écran. La pilule flottante, elle, laissait voir la
+     page par-dessous des deux côtés et donnait deux objets là où il n'y en a
+     qu'un. */
+  position: fixed; left: 0; right: 0; z-index: 35;
+  border-radius: 0;
+  bottom: var(--tabbar-h, 78px);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgb(var(--night2-rgb) / .96);
+  backdrop-filter: blur(16px);
+  border: 0; border-top: 1px solid rgb(255 255 255 / .09);
+  box-shadow: 0 -8px 24px rgb(var(--void-rgb) / .55);
+}
+
+/* ── Les carrousels du bas de fiche ──────────────────────── */
+.suite { margin-top: 26px; }
+.suite__titre {
+  margin: 0 0 11px; font-size: 15px; font-weight: 800; color: var(--cream);
+}
+/* Une piste qu'on fait glisser du pouce, aimantée : s'arrêter entre deux
+   vignettes donne l'impression d'un écran mal fini.
+
+   `scroll-padding` n'est pas un détail : un aimantage obligatoire aligne la
+   vignette sur le bord du cadre, marge intérieure comprise. Sans lui, la
+   piste s'ouvrait déjà décalée de quatorze pixels et la première vignette
+   collait au bord de l'écran, alors que tout le reste de la page commence
+   à la même gouttière. */
+.suite__piste {
+  display: flex; gap: 10px; overflow-x: auto;
+  margin: 0 -14px; padding: 2px 14px 6px;
+  scroll-snap-type: x mandatory; scroll-padding-inline-start: 14px;
+  scrollbar-width: none;
+}
+.suite__piste::-webkit-scrollbar { display: none; }
+
+.suggestion {
+  flex: none; width: 124px; scroll-snap-align: start;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 0; text-align: start;
+  background: none; border: 0; color: var(--cream);
+}
+.suggestion__art {
+  display: block; aspect-ratio: 1; overflow: hidden;
+  background: rgb(var(--ink-rgb) / .45);
+  border: var(--line) solid var(--line-soft); border-radius: var(--radius);
+}
+/* `video` autant que `img` : un produit qui n'a qu'une vidéo montre sa
+   vidéo, et elle doit remplir le cadre comme le ferait une photo. */
+.suggestion__art img, .suggestion__art video { width: 100%; height: 100%; object-fit: cover; }
+.suggestion__nom {
+  font-size: 12.5px; font-weight: 700; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.suggestion:active .suggestion__art { border-color: rgb(var(--neon-rgb) / .45); }
+
+/* ── L'attente d'une vidéo ───────────────────────────────────
+   La vignette tient la place mais ne dit rien : le client appuie sur
+   lecture, rien ne bouge, et il croit la vidéo cassée alors qu'elle
+   arrive. L'anneau dit qu'elle arrive, la durée dit combien de temps
+   il s'engage. Posé sans intercepter les appuis : les contrôles du
+   lecteur sont dessous, et il faut pouvoir les atteindre. */
+.vcharge {
+  position: absolute; inset: 0; z-index: 3;
+  display: grid; place-content: center; justify-items: center; gap: 9px;
+  /* Assez sombre pour que l'anneau se détache d'une vignette claire : à
+     45 % d'opacité il disparaissait sur une photo de produit bien exposée,
+     c'est-à-dire sur la plupart. */
+  background: rgb(var(--void-rgb) / .68);
+  pointer-events: none;
+  transition: opacity .25s ease, visibility .25s;
+}
+.vcharge--fini { opacity: 0; visibility: hidden; }
+/* L'anneau qui tourne pendant qu'une vidéo produit se charge. Il partage
+   son animation avec l'écran d'ouverture d'autrefois ; celui-ci est passé
+   au film, mais la rotation reste définie ici, où elle sert encore. */
+@keyframes charge-tour { to { transform: rotate(360deg); } }
+.vcharge__arc {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 3px solid rgb(var(--cream-rgb) / .22);
+  border-top-color: var(--neon);
+  animation: charge-tour .95s linear infinite;
+}
+.vcharge__duree {
+  font-size: 12px; font-weight: 800; letter-spacing: .04em;
+  color: var(--cream);
+  background: rgb(var(--void-rgb) / .6);
+  border-radius: 999px; padding: 2px 9px;
+}
+[data-anim='off'] .vcharge__arc { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .vcharge__arc { animation: none; }
+  .vcharge { transition: none; }
+}
+
+/* Un GIF occupe la case comme une photo : il ne porte ni contrôles ni
+   bouton de lecture, donc rien à réserver en bas. */
+.galerie__gif {
+  width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+  background: rgb(var(--ink-rgb) / .5);
+}
+
+/* ══ Ce qui bouge ═══════════════════════════════════════════════
+   Une boutique figée a l'air d'une capture d'écran. Trois mouvements,
+   pas un de plus, et chacun dit quelque chose :
+
+   - l'écran qui arrive monte de huit pixels en apparaissant. C'est ce
+     qui fait comprendre qu'on a changé de page et non rechargé la
+     même ;
+   - le bloc de l'onglet actif glisse d'un onglet à l'autre au lieu de
+     sauter. Le regard suit le bloc et sait d'où il vient ;
+   - une carte qu'on touche s'enfonce. C'est la seule réponse qu'un
+     écran tactile peut donner tout de suite, avant même que la page
+     ait changé.
+
+   Tout est suspendu par [data-anim='off'] et par la préférence système :
+   quelqu'un qui a le mal des transports ne doit pas payer notre décor. */
+
+.vue { animation: vue-entre .24s cubic-bezier(.22, .8, .3, 1) both; }
+@keyframes vue-entre {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Le curseur de l'onglet actif est défini plus haut, avec le reste de la
+   barre. Il y avait ici un second jeu de règles — la pilule arrondie de la
+   barre flottante dont cette boutique est partie — qui écrasait le premier
+   du seul fait d'être plus bas dans le fichier : on obtenait un pavé bleu
+   arrondi par-dessus l'onglet ouvert, au lieu du trait de néon. */
+.tabbar { position: fixed; }
+.tabbar__item { position: relative; z-index: 1; }
+
+/* La carte qu'on touche s'enfonce, et le doigt le sent avant que la fiche
+   s'ouvre. Cinq centièmes de seconde : au-delà, c'est une animation ; en
+   deçà, on ne la voit pas. */
+.card, .suggestion, .variant, .cat, .chiffre { will-change: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vue { animation: none; }
+  .tabbar__curseur { transition: none; }
+}
+
+/* Un vrai fichier GIF est une image : elle remplit sa case comme une photo,
+   et boucle d'elle-même. */
+.card__gif { width: 100%; height: 100%; object-fit: cover; display: block; }
+img.galerie__gif { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.card--soldout .card__gif { filter: grayscale(1); opacity: .38; }
+
+/* ── L'accueil ───────────────────────────────────────────────
+   Un cadre posé sur la boutique, pas un écran de plus : on voit le
+   catalogue derrière, floutée juste ce qu'il faut pour qu'on sache où
+   l'on vient d'arriver. Un voile opaque aurait fait une seconde attente
+   après celle du film. */
+.bienvenue {
+  position: fixed; inset: 0; z-index: 110;
+  display: grid; place-items: center; padding: 22px;
+  background: rgb(var(--void-rgb) / .72);
+  backdrop-filter: blur(9px);
+  animation: bienvenue-fond .3s ease both;
+}
+.bienvenue[hidden] { display: none; }
+@keyframes bienvenue-fond { from { opacity: 0; } to { opacity: 1; } }
+
+.bienvenue__carte {
+  width: 100%; max-width: 330px;
+  padding: 22px 20px 18px; border-radius: 20px; text-align: center;
+  background: rgb(var(--night2-rgb) / .98);
+  border: 1px solid rgb(255 255 255 / .12);
+  box-shadow: 0 22px 54px rgb(0 0 0 / .6);
+  animation: bienvenue-carte .34s cubic-bezier(.2, .9, .3, 1) both;
+}
+@keyframes bienvenue-carte {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.bienvenue__logo {
+  width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 10px;
+  display: block; object-fit: cover;
+  border: 1px solid rgb(var(--jaune-rgb) / .4);
+}
+.bienvenue__enseigne {
+  margin: 0; font-size: 23px; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--cream);
+}
+.bienvenue__salut {
+  margin: 3px 0 0; font-size: 13.5px; font-weight: 700;
+  color: var(--jaune);
+}
+.bienvenue__texte {
+  margin: 10px 0 0; font-size: 13px; line-height: 1.55;
+  color: rgb(var(--cream-rgb) / .78);
+}
+/* Ce que la phrase promet, au jaune de l'enseigne.
+
+   Le corps du paragraphe est volontairement en retrait — 78 % d'opacité :
+   c'est un texte d'accueil, pas le catalogue. Les deux passages qui portent
+   le message reviennent à pleine lumière et prennent la couleur de la
+   marque, ce qui suffit à les faire lire en premier sans crier.
+
+   Deux, et pas trois : le nom de la boutique est déjà écrit en gros juste
+   au-dessus, et un troisième passage en jaune ferait un paragraphe qui
+   clignote plutôt qu'une phrase qui accroche. */
+.bienvenue__texte strong {
+  color: var(--jaune); font-weight: 800;
+}
+
+/* L'horaire et le service. En capitales et espacés : ce sont deux
+   étiquettes, pas des phrases, et on doit pouvoir les lire d'un coup d'œil
+   sans lire le paragraphe au-dessus. */
+/* Les horaires et le service, en deux pastilles.
+   Posés en texte libre, ils se lisaient comme la fin du paragraphe ; dans
+   une pastille, on voit d'abord la forme et on lit ensuite. `flex-wrap`
+   parce qu'à 320 px les deux ne tiennent pas côte à côte : mieux vaut deux
+   lignes que deux pastilles écrasées. */
+.bienvenue__infos {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  justify-content: center; margin: 14px 0 0;
+}
+.bienvenue__info {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  background: rgb(255 255 255 / .06);
+  border: 1px solid rgb(255 255 255 / .1);
+  color: rgb(var(--cream-rgb) / .88);
+}
+.bienvenue__info b {
+  font-family: var(--display); font-weight: 700; color: var(--jaune);
+}
+/* Boutique fermée : la pastille d'horaire passe au rouge. Le texte dit déjà
+   « De retour à 13h » — la couleur ne fait que le confirmer d'un coup d'œil,
+   elle ne porte aucune information à elle seule. */
+.bienvenue__info--ferme {
+  border-color: rgb(var(--red-rgb) / .45);
+  background: rgb(var(--red-rgb) / .1);
+}
+.bienvenue__info--ferme b { color: rgb(var(--red-rgb)); }
+.bienvenue__info--ferme .bienvenue__info-icone { color: rgb(var(--red-rgb) / .7); }
+
+.bienvenue__info-icone {
+  width: 13px; height: 13px; flex: none;
+  color: rgb(var(--cream-rgb) / .45);
+}
+
+/* Le choix de la langue, en liste native.
+   Habillée comme la liste de tri du catalogue, pour que la boutique n'ait
+   pas deux manières de poser une liste. `appearance: none` retire le décor
+   du système sur le champ fermé ; le menu qu'il ouvre, lui, reste celui du
+   téléphone — c'est tout l'intérêt, et aucun style de la page ne l'atteint. */
+.langue-liste {
+  width: 100%; font: inherit; font-size: 14px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--ink-rgb) / .55);
+  border: var(--line) solid var(--line-soft); border-radius: var(--radius);
+  padding: 11px 34px 11px 13px; cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  /* Le chevron, dessiné dans le fond : un élément par-dessus intercepterait
+     l'appui, et un `pointer-events: none` de plus pour le rattraper. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%23ecece9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='.7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 17px;
+}
+.langue-liste:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.langue-liste option { background: var(--night-2); color: var(--cream); }
+
+/* Le choix de la langue. Trois boutons côte à côte plutôt qu'une liste
+   déroulante : à trois entrées, une liste demande deux gestes là où des
+   boutons en demandent un, et cache les options jusqu'au premier. */
+.bienvenue__langues { margin: 16px 0 0; }
+.bienvenue__legende {
+  margin: 0 0 8px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.bienvenue__choix { display: flex; gap: 8px; justify-content: center; }
+.bienvenue__langue {
+  flex: 1; padding: 9px 4px 8px; border-radius: 12px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 11.5px; font-weight: 700; color: rgb(var(--cream-rgb) / .8);
+  background: rgb(255 255 255 / .05);
+  border: 1px solid var(--line-soft);
+  transition: transform .12s ease, background .16s ease, border-color .16s ease, color .16s ease;
+}
+.bienvenue__langue span { font-size: 19px; line-height: 1; }
+.bienvenue__langue:active { transform: scale(.95); }
+.bienvenue__langue--choisie {
+  color: var(--ink); background: var(--jaune);
+  border-color: var(--jaune);
+}
+
+/* Le bouton porte lui-même son espace. Il était porté par la marge basse
+   du bloc des langues, qui disparaît avec lui pour un client qui revient :
+   le bouton venait alors toucher la ligne « MEET-UP & LIVRAISON ». */
+.bienvenue__entrer { margin-top: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bienvenue, .bienvenue__carte { animation: none; }
+  .bienvenue__langue { transition: none; }
+}
+
+/* Le réglage de langue, en tête du profil. Il réutilise les boutons de
+   l'écran d'accueil : deux jeux de drapeaux dessinés séparément finiraient
+   par ne plus se ressembler. */
+.profil__langue {
+  margin: 0 0 16px; padding: 12px 13px 11px; border-radius: 14px;
+  background: rgb(var(--panel-rgb) / .45);
+  border: 1px solid var(--line-soft);
+}
+.profil__langue-titre {
+  margin: 0 0 8px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.profil__langue-aide {
+  margin: 8px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--muted);
+}
+
+/* ── Le sens de lecture ──────────────────────────────────────
+
+   L'arabe se lit de droite à gauche. La quasi-totalité de cette feuille
+   est déjà écrite en propriétés logiques — `inset-inline-start` plutôt
+   que `left`, `text-align: start` plutôt que `left` — et se retourne donc
+   toute seule quand `<html dir="rtl">` est posé.
+
+   Ce qui suit est la part que les propriétés logiques ne savent pas
+   exprimer : une ombre interne, un `translateX` chiffré, un chevron qui
+   pointe. Rien d'autre ne devrait venir s'ajouter ici — une nouvelle
+   règle directionnelle s'écrit en logique du premier coup. */
+
+/* La pastille de la carte est collée au coin haut de la photo, avec son
+   arête jaune côté bord et un seul coin arrondi. `box-shadow: inset` et
+   les quatre rayons nommés n'ont pas d'équivalent logique : on les
+   redessine en miroir. */
+[dir='rtl'] .card__badge {
+  left: auto; right: 0;
+  padding: 5px 11px 5px 10px;
+  border-top-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-top-right-radius: calc(var(--radius) - 1px);
+  border-bottom-left-radius: 9px;
+  box-shadow: inset -3px 0 0 var(--jaune);
+}
+[dir='rtl'] .card__badge--out { box-shadow: inset -3px 0 0 rgb(var(--cream-rgb) / .35); }
+
+/* L'interrupteur des alertes : le bouton part du bord et glisse de 19 px
+   vers l'autre. Le départ suit le sens de lecture, la course doit suivre
+   avec — sinon le rond sort de son rail. */
+[dir='rtl'] .alerte[aria-checked='true'] .alerte__bouton::after { transform: translateX(-19px); }
+
+/* Le chevron de la carte dit « ça continue par là » : retourné, il
+   montrerait la sortie. */
+[dir='rtl'] .card__fleche { transform: scaleX(-1); }
+[dir='rtl'] .card:active .card__fleche { transform: scaleX(-1) translateX(2px); }
+
+/* Ce que le vendeur a écrit reste dans sa langue.
+
+   Les noms de produits, leurs descriptions et les catégories ne sont pas
+   traduits — c'est une décision prise ailleurs, et elle est bonne : personne
+   ne gagne à lire « Plasma Static » en arabe. Mais un nom latin posé dans
+   une page arabe emmène sa ponctuation du mauvais côté : « Purple Runtz —
+   2 g » finit par afficher le tiret à droite du gramme.
+
+   `unicode-bidi: isolate` dit au navigateur de traiter le bloc comme une
+   petite île : il trouve son sens de lecture tout seul, et ne déteint pas
+   sur la phrase arabe qui l'entoure. */
+[dir='rtl'] .card__name, [dir='rtl'] .pdetail__name, [dir='rtl'] .pdetail__desc,
+[dir='rtl'] .favori__nom, [dir='rtl'] .notation__nom, [dir='rtl'] .suggestion__nom,
+[dir='rtl'] .rayon__nom, [dir='rtl'] .variant__prix, [dir='rtl'] .order__ref,
+[dir='rtl'] .order__items li, [dir='rtl'] .card__badge, [dir='rtl'] .juke__titre {
+  unicode-bidi: isolate;
+}
+
+/* Aucun interlettrage en arabe.
+
+   Les lettres arabes se soudent l'une à l'autre : les espacer ne les
+   aère pas, il les décroche, et un mot s'écrit alors en lettres
+   détachées que personne n'écrit ainsi. Quarante et une règles de cette
+   feuille posent un `letter-spacing` — c'est le prix du lettrage
+   d'enseigne, et il ne vaut que pour l'alphabet latin. Le `!important`
+   est assumé : c'est une correction typographique qui doit passer devant
+   toutes ces règles, et il n'y a pas d'autre moyen de le dire une fois
+   pour toutes. */
+[dir='rtl'], [dir='rtl'] *, [dir='rtl'] *::before, [dir='rtl'] *::after {
+  letter-spacing: normal !important;
+}
+
+/* ── La porte de secours ─────────────────────────────────────
+   Le même cadre que le choix de la langue : c'est un réglage du client,
+   pas une alarme. Un bloc rouge à cet endroit annoncerait une panne qui
+   n'a pas eu lieu, et ferait fuir plus de monde qu'il n'en couvrirait. */
+.profil__secours {
+  margin: 0 0 16px; padding: 12px 13px 13px; border-radius: 14px;
+  background: rgb(var(--panel-rgb) / .45);
+  border: 1px solid var(--line-soft);
+}
+.profil__secours-texte {
+  margin: 0 0 11px; font-size: 12.5px; line-height: 1.5; color: var(--muted);
+}
+.profil__secours-lien { text-decoration: none; }
+/* Enregistrée : le bouton n'appelle plus à un geste, il constate. Il reste
+   touchable — c'est la conversation, et on peut vouloir y aller. */
+.profil__secours--fait .profil__secours-lien {
+  background: transparent; color: var(--neon);
+  border: 1px solid rgb(var(--neon-rgb) / .45); box-shadow: none;
+}
+.profil__secours--fait .profil__secours-lien::before { content: '✓ '; }
+
+/* ── Les photos ne se décrochent pas ─────────────────────────
+
+   Ce que ceci fait, et il faut être exact : sur un appui long, le téléphone
+   ne propose plus « Enregistrer l'image » ni « Partager », et l'image ne se
+   traîne plus hors de la page. C'est le geste du curieux pressé.
+
+   Ce que ceci NE fait PAS : empêcher une capture d'écran. Aucune page web
+   ne le peut — ni celle-ci, ni aucune autre. Un bouton de volume + un bouton
+   d'alimentation sont hors de portée du navigateur, et le resteront.
+
+   Posé sur les images seulement. La vidéo garde ses contrôles natifs : les
+   lui retirer casserait le lecteur, et on n'aurait rien gagné — un client
+   qui veut la vidéo la filme depuis un autre téléphone.
+
+   `-webkit-touch-callout` ne vaut que sur iOS : Chromium ne connaît pas
+   cette propriété et jette la déclaration — vérifié, elle ne figure même
+   pas dans la règle une fois la feuille analysée. Sur Android, c'est
+   l'annulation de l'événement `contextmenu`, dans app.js, qui fait tout le
+   travail. Les deux moitiés sont nécessaires, chacune pour un téléphone. */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Le voile « téléphone uniquement » retire la boutique de l'écran au
+   lieu de se contenter de la recouvrir : rien d'elle ne reste visible,
+   et aucun de ses boutons n'est atteignable. */
+body.verrouille .page,
+body.verrouille .tabbar,
+body.verrouille .pbar,
+body.verrouille .lpastille,
+body.verrouille .juke { display: none !important; }

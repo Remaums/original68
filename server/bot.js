@@ -1,0 +1,2223 @@
+import { Bot, InlineKeyboard, InputFile } from 'grammy';
+import { config } from './config.js';
+import { listOrders, STATUSES, setStatus } from './orders.js';
+import { restoreStock, getCatalog, addProductMedia, MEDIA_MAX } from './catalog.js';
+import { matchProduct } from './photos.js';
+import { adresseEnClair, liensItineraire } from './delivery.js';
+import { getSettings, saveSettings, isBlocked } from './settings.js';
+import { requestVerification, decideVerification } from './verification.js';
+import {
+  desabonner, reabonner, estDesabonne, consignerResultat, destinataires, reserverEnvoi,
+  destinatairesDuRegistre,
+} from './annonces.js';
+import { destinatairesDuCanal } from './preferences.js';
+import { estPasse, ouvrirLaPorte, demanderLEpreuve, repondre } from './bot-captcha.js';
+import {
+  messageRelaye,
+  idDuRelais,
+  messagePourLeClient,
+  refusDeTelegram,
+  texteValide,
+} from './messagerie.js';
+import { deposerAvis, refusDAvis } from './avis.js';
+import { estAdmin, listerAdmins, ajouterAdmin, retirerAdmin } from './admins.js';
+import { creerCadence, attenteEnClair } from './cadence.js';
+import { noterPassage, visitesDesClients, FENETRE_MS, MEMOIRE_MS } from './presence.js';
+import { noterUtilisateur, trouverParPseudo, ficheDuRegistre } from './users.js';
+// Le dictionnaire de la boutique. Le bot parle français, mais il puise ses
+// phrases d'accueil à la même source que la Mini App : une phrase recopiée
+// dans deux fichiers est une phrase qui divergera.
+import { TEXTES, LANGUES, LANGUE_PAR_DEFAUT } from '../webapp/js/langues.js';
+import { langueDe, choisirLaLangue } from './langue.js';
+import { lienDuSecours } from './bot-secours.js';
+import { adminAPrevenir } from './contact.js';
+import {
+  combien as combienAuSecours, sante as santeDesPortes,
+  configure as configureSecours, estInscrit as estInscritAuSecours,
+} from './secours.js';
+
+/**
+ * Le bot, construit même sans jeton.
+ *
+ * grammY refuse un token vide en levant « Empty token! » — et comme les
+ * imports d'un module ES sont évalués avant le corps du fichier, ce plantage
+ * arrivait *avant* le contrôle de configuration. Un nouvel utilisateur qui
+ * oubliait son BOT_TOKEN recevait donc une trace JavaScript au lieu du
+ * message qui lui dit quoi faire. Le jeton de remplacement ne sert jamais :
+ * en ligne de commande, le contrôle arrête le process juste après ; ailleurs,
+ * `bot.start()` échoue proprement et la boutique reste servie.
+ */
+export const bot = new Bot(config.botToken || '0:BOT_TOKEN-absent');
+
+/**
+ * Telegram n'accepte un bouton Mini App qu'avec une URL HTTPS valide.
+ *
+ * Sans `WEBAPP_URL`, ou avec une adresse en HTTP, Telegram refuse le message
+ * entier : la commande échouait alors sans rien afficher, et on cherchait du
+ * côté des droits admin un problème de configuration.
+ */
+const urlUtilisable = () => /^https:\/\/[^\s]+$/.test(config.webappUrl);
+
+// Rendre `undefined` plutôt qu'un clavier invalide : Telegram refuse le
+// message entier quand un bouton Mini App porte une URL qu'il n'accepte pas,
+// si bien que /start ne répondait rien du tout. Le garde-fou est ici, à
+// l'endroit unique où le clavier se fabrique, plutôt que dispersé sur chaque
+// appel — il en manquait justement sur les commandes les plus utilisées.
+const shopKeyboard = () =>
+  urlUtilisable()
+    ? new InlineKeyboard().webApp('🛒 Ouvrir la boutique', config.webappUrl).danger()
+    : undefined;
+
+/**
+ * L'adresse du panneau admin, fabriquée à un seul endroit.
+ *
+ * La barre oblique de fin se retire : `WEBAPP_URL` se recopie à la main dans
+ * le `.env`, et une adresse collée depuis un navigateur en porte presque
+ * toujours une. `https://…/` + `/admin.html` donnait `//admin.html`, que
+ * Telegram accepte comme bouton mais qui tombe sur un 404 au clic.
+ */
+const lienDuPanneau = () => `${config.webappUrl.replace(/\/+$/, '')}/admin.html`;
+
+const adminKeyboard = () =>
+  urlUtilisable()
+    ? new InlineKeyboard().webApp('⚙️ Espace admin', lienDuPanneau())
+    : undefined;
+
+/**
+ * Le bouton du menu, en bas à gauche du chat, qui ouvre la boutique.
+ *
+ * Par défaut Telegram met là un bouton « Menu » qui déroule la liste des
+ * commandes. On le remplace par un lanceur direct de la Mini App : un seul
+ * geste, en bas à gauche, plus besoin de retrouver le bouton « Ouvrir la
+ * boutique » d'un ancien message.
+ *
+ * Réglé pour tous les clients d'un coup (pas de chat_id), et remis en place à
+ * chaque démarrage : ainsi il suit toujours WEBAPP_URL, sans manœuvre du
+ * vendeur. Sans URL HTTPS valide, on repose le menu par défaut plutôt que de
+ * laisser un lanceur cassé — Telegram refuserait de l'ouvrir.
+ */
+/** Ce que Telegram accepte comme libellé de bouton de menu. */
+const MENU_MAX = 64;
+
+export async function configurerMenu() {
+  if (!urlUtilisable()) {
+    await bot.api.setChatMenuButton({ menu_button: { type: 'default' } });
+    return { type: 'default' };
+  }
+  await bot.api.setChatMenuButton({
+    menu_button: {
+      type: 'web_app',
+      // Le nom de la boutique plutôt que le mot « Boutique » : c'est
+      // l'enseigne, et c'est elle que le client cherche des yeux en bas de
+      // l'écran. Repris des réglages, donc il suit un changement de nom.
+      //
+      // Telegram borne ce libellé ; on le raccourcit plutôt que de le lui
+      // faire refuser, auquel cas le menu retomberait sur « Menu » sans que
+      // rien ne le dise.
+      text: `${config.shopName} ⚡`.slice(0, MENU_MAX),
+      web_app: { url: config.webappUrl },
+    },
+  });
+  return { type: 'web_app', url: config.webappUrl };
+}
+
+/**
+ * Le menu « / » de Telegram : vide pour tout le monde, garni pour le vendeur.
+ *
+ * Par défaut, Telegram propose à chaque client la liste des commandes du bot.
+ * Une liste affichée à un acheteur lui apprend surtout qu'il en existe
+ * d'autres : il essaie `/annonce`, `/addadmin`, se fait refuser — et le refus
+ * lui confirme qu'elles existent. Le catalogue s'ouvre d'un bouton ; un
+ * client n'a aucune commande à taper.
+ *
+ * Deux portées, donc. `all_private_chats` reçoit une liste vide : c'est ce
+ * que voient tous ceux qui ne sont pas nommés. Chaque administrateur reçoit
+ * la sienne, sur la portée `chat`, qui l'emporte sur la précédente.
+ *
+ * Reposé à chaque démarrage, comme le bouton de menu : c'est ainsi qu'un
+ * administrateur ajouté depuis le bot finit par voir ses commandes, sans
+ * manœuvre. Un échec n'arrête rien — le menu est un confort, pas la boutique.
+ */
+export async function configurerLesCommandes() {
+  await bot.api.setMyCommands([], { scope: { type: 'all_private_chats' } });
+
+  const patrons = (await listerAdmins().catch(() => [])).map((a) => String(a.id));
+  let poses = 0;
+  for (const id of patrons) {
+    try {
+      await bot.api.setMyCommands(COMMANDES_TELEGRAM, { scope: { type: 'chat', chat_id: id } });
+      poses += 1;
+    } catch {
+      // Presque toujours « chat not found » : cet administrateur n'a jamais
+      // ouvert la conversation. Rien à réparer, et rien à dire — il verra
+      // ses commandes au premier /start.
+    }
+  }
+  return { caches: true, patrons: patrons.length, poses };
+}
+
+/**
+ * Ce que Telegram affiche dans le menu d'un administrateur.
+ *
+ * Volontairement court : le menu de Telegram est une aide à la frappe, pas
+ * une documentation. La liste complète, avec ce que fait chaque commande,
+ * est dans `/admin`.
+ */
+const COMMANDES_TELEGRAM = [
+  { command: 'admin', description: 'Espace admin, et la liste des commandes' },
+  { command: 'boutique', description: 'Ouvrir le catalogue' },
+  { command: 'ouvrir', description: 'Ouvrir la boutique' },
+  { command: 'fermer', description: 'Fermer la boutique' },
+  { command: 'enligne', description: 'Les visites de la dernière demi-heure' },
+  { command: 'annonce', description: 'Écrire à tous les clients' },
+  { command: 'secours', description: 'La porte de secours' },
+  { command: 'admins', description: 'Qui a les clés' },
+];
+
+/** Ce qu'il faut dire quand aucun bouton ne peut être proposé. */
+const PAS_D_URL =
+  "⚠️ WEBAPP_URL n'est pas renseignée (ou n'est pas en HTTPS) : Telegram refuse " +
+  "d'ouvrir une Mini App sans adresse HTTPS valide.\n\n" +
+  'Renseigne-la dans le fichier .env, puis redémarre la boutique.';
+
+/**
+ * Deux sources décident désormais : le `.env` et ceux que le propriétaire a
+ * ajoutés depuis le bot. La lecture est donc asynchrone — la liste vit dans un
+ * magasin, pas dans une variable d'environnement figée au démarrage.
+ */
+const isAdmin = (id) => estAdmin(id);
+
+/**
+ * L'accueil : ce que voit quelqu'un qui vient d'ouvrir la conversation.
+ *
+ * C'est le dernier message du parcours, pas le premier : d'abord le bot de
+ * secours, puis le calcul, et seulement ensuite celui-ci, avec le bouton qui
+ * ouvre la boutique. Il ne dit donc rien des deux marches — elles sont déjà
+ * franchies quand il arrive.
+ *
+ * La porte de secours y était collée, en un paragraphe sans bouton au milieu
+ * du texte de bienvenue. Elle a désormais son message à elle, juste après :
+ * un lien noyé dans un mot d'accueil ne se touche pas, et celui-là est le
+ * seul geste qu'on demande.
+ */
+/**
+ * Un texte du dictionnaire de la boutique, rendu en MarkdownV2.
+ *
+ * Les phrases d'accueil portent du gras en HTML — c'est la Mini App qui les
+ * affiche d'abord. Telegram, lui, ne connaît que ses astérisques. On découpe
+ * donc sur les balises et on échappe chaque morceau séparément : échapper
+ * d'abord transformerait les chevrons en `\>` et le gras serait perdu.
+ *
+ * Le découpage alterne — avant, gras, entre, gras, après — ce qui met les
+ * passages en gras aux rangs impairs. Cela ne tient que sur des balises
+ * appariées, et elles le sont : ce dictionnaire est le nôtre.
+ */
+function markdownDepuisHtml(texte) {
+  return String(texte)
+    .split(/<strong>|<\/strong>/)
+    .map((bout, rang) => (rang % 2 ? `*${escapeMarkdown(bout)}*` : escapeMarkdown(bout)))
+    .join('');
+}
+
+/**
+ * La phrase d'accueil, reprise du dictionnaire de la boutique.
+ *
+ * Importée plutôt que recopiée : c'est le même texte que le cadre d'accueil
+ * de la Mini App, et deux copies finissent toujours par diverger — le
+ * vendeur retouche la vitrine, le bot garde l'ancienne phrase pendant des
+ * mois sans que personne s'en aperçoive.
+ *
+ * Le nom de la boutique est posé AVANT l'échappement, en le mettant en gras
+ * lui-même. Le faire après obligerait à retrouver `\{boutique\}` sous sa
+ * forme échappée, ce qui marche jusqu'au jour où l'échappement change.
+ */
+function phraseDAccueil(nom, langue) {
+  const [avant, apres] = String(tr(langue, 'accueil.texte')).split('{boutique}');
+  return markdownDepuisHtml(avant) + `*${escapeMarkdown(nom)}*` + markdownDepuisHtml(apres ?? '');
+}
+
+/**
+ * Un texte de la boutique, dans la langue d'un client.
+ *
+ * Repli sur le français plutôt que sur la clef : un message à moitié traduit
+ * se lit encore, un message qui affiche « accueil.horaires » ne se lit pas.
+ */
+function tr(langue, clef) {
+  return TEXTES[langue]?.[clef] ?? TEXTES[LANGUE_PAR_DEFAUT][clef] ?? clef;
+}
+
+/**
+ * Le clavier de l'accueil : la boutique, et de quoi changer de langue.
+ *
+ * Le bouton de langue porte le mot dans la langue en cours — qui est déjà
+ * celle du téléphone quand le client n'a rien choisi. Un globe seul se
+ * comprend partout, mais ne dit pas ce qu'il fera ; le mot le dit.
+ */
+function clavierDAccueil(langue) {
+  const clavier = new InlineKeyboard();
+  // `.danger()` est le rouge de Telegram, arrivé avec la version 9.4 de son
+  // API en février 2026. C'est la seule façon de colorer un bouton : avant,
+  // un emoji rouge dans le libellé était tout ce qu'on pouvait faire.
+  if (urlUtilisable()) clavier.webApp('🛒 Ouvrir la boutique', config.webappUrl).danger().row();
+  clavier.text(`🌐 ${tr(langue, 'profil.langue')}`, 'lang:menu');
+  return clavier;
+}
+
+/**
+ * Les huit langues, deux par rang.
+ *
+ * Deux et non une : huit rangs pousseraient le message hors de l'écran sur
+ * un téléphone, et le client perdrait de vue ce qu'il est en train de
+ * régler. Quatre rangs tiennent sous le message.
+ */
+function clavierDesLangues() {
+  const clavier = new InlineKeyboard();
+  LANGUES.forEach((l, rang) => {
+    clavier.text(`${l.drapeau} ${l.nom}`, `lang:${l.code}`);
+    if (rang % 2 === 1) clavier.row();
+  });
+  return clavier;
+}
+
+/** Le message d'accueil, monté dans une langue. */
+function texteDAccueil(langue, identifiant) {
+  const ligne = (emoji, clef) => `${emoji}  ${escapeMarkdown(tr(langue, clef))}`;
+  return (
+    // La feuille ouvre la phrase plutôt que de titrer au-dessus d'elle : le
+    // nom de la boutique y est déjà, et le répéter deux lignes plus haut
+    // faisait dire deux fois la même chose à trois centimètres d'intervalle.
+    `🌿 ${phraseDAccueil(config.shopName, langue)}\n\n` +
+    // Les trois choses qu'on demande à une boutique avant d'y entrer :
+    // quand, comment, et avec quoi on paie. Une par ligne — collées, on
+    // les lit comme une phrase et on n'en retient aucune.
+    `${ligne('🕒', 'accueil.horaires')}\n` +
+    `${ligne('🛵', 'accueil.service')}\n` +
+    `${ligne('💶', 'contact.especes')}\n\n` +
+    // Le panier a disparu de la boutique il y a longtemps : ce message
+    // continuait d'en promettre un à chaque nouveau client, et c'est la
+    // toute première phrase qu'il lisait.
+    `${ligne('👇', 'accueil.botApp')}\n\n` +
+    `🆔  \`${identifiant}\``
+  );
+}
+
+const accueillir = async (ctx) => {
+  const { code } = await langueDe(ctx.from.id, ctx.from.language_code);
+  await ctx.reply(texteDAccueil(code, ctx.from.id), {
+    parse_mode: 'MarkdownV2',
+    reply_markup: clavierDAccueil(code),
+  });
+  return proposerLeSecours(ctx);
+};
+
+/* ── Le choix de la langue ───────────────────────────────── */
+
+/**
+ * Le bouton de langue déroule les huit drapeaux, sur place.
+ *
+ * On remplace le clavier du message plutôt que d'en envoyer un second : une
+ * conversation qui empile trois messages pour un réglage donne le sentiment
+ * d'avoir fait une bêtise, et le client remonte chercher lequel est le bon.
+ */
+bot.callbackQuery('lang:menu', async (ctx) => {
+  await ctx.answerCallbackQuery().catch(() => {});
+  await ctx.editMessageReplyMarkup({ reply_markup: clavierDesLangues() }).catch(() => {});
+});
+
+bot.callbackQuery(/^lang:([a-z]{2})$/, async (ctx) => {
+  const code = await choisirLaLangue(ctx.from.id, ctx.match[1]);
+  if (!code) return ctx.answerCallbackQuery('?').catch(() => {});
+
+  const choisie = LANGUES.find((l) => l.code === code);
+  await ctx.answerCallbackQuery(`${choisie?.drapeau ?? ''} ${choisie?.nom ?? code}`).catch(() => {});
+  // Le message se réécrit dans la nouvelle langue, à sa place. Un second
+  // message d'accueil ferait croire à un second /start, et le premier
+  // resterait au-dessus dans l'ancienne langue — c'est exactement ce qu'on
+  // vient de lui demander de ne plus lire.
+  await ctx
+    .editMessageText(texteDAccueil(code, ctx.from.id), {
+      parse_mode: 'MarkdownV2',
+      reply_markup: clavierDAccueil(code),
+    })
+    .catch(() => {});
+});
+
+/**
+ * La porte de secours, proposée à qui n'est pas passé par le péage.
+ *
+ * Quatre personnes entrent sans franchir la marche du secours : le vendeur,
+ * qui ne doit jamais pouvoir se fermer sa propre boutique, et ceux qui ont
+ * déjà commandé, à qui on ne pose pas une condition nouvelle après coup. Ce
+ * sont, précisément, les gens les plus anciens de la boutique — et sans ce
+ * message ils seraient les seuls à ne jamais s'entendre proposer le geste,
+ * donc les seuls impossibles à prévenir le jour de la panne.
+ *
+ * Un message à part, avec les mêmes boutons que le péage. Rien du tout pour
+ * qui est déjà inscrit : lui redemander à chaque /start ferait du filet une
+ * corvée.
+ */
+async function proposerLeSecours(ctx) {
+  if (!configureSecours()) return undefined;
+  if (!(await getSettings()).features.porteSecours) return undefined;
+  if (await estInscritAuSecours(ctx.from.id)) return undefined;
+  const lien = await lienDuSecours().catch(() => '');
+  if (!lien) return undefined;
+  return ctx.reply(
+    "🆘 Une dernière chose, et elle compte.\n\n" +
+      'Cette boutique a un second bot, au cas où celui-ci disparaîtrait. ' +
+      "Écris-lui une fois — un simple /start suffit.\n\n" +
+      'Sans ce message, Telegram ne me laissera jamais te donner la nouvelle ' +
+      "adresse le jour où cette conversation s'arrêtera.",
+    { reply_markup: clavierDuSecours(lien) }
+  );
+}
+
+/* ── La porte du bot ─────────────────────────────────────── */
+
+/** Les six boutons d'une épreuve, sur deux rangs. */
+function clavierDEpreuve(choix) {
+  const clavier = new InlineKeyboard();
+  choix.forEach((valeur, rang) => {
+    clavier.text(String(valeur), `cap:${valeur}`);
+    if (rang === 2) clavier.row();
+  });
+  return clavier;
+}
+
+const poserLEpreuve = (ctx, epreuve, avant = '') =>
+  ctx.reply(
+    `${avant}🔒 Petite vérification avant d'entrer.\n\n` +
+      `Combien font ${epreuve.texte} ?\n\n` +
+      'C\'est pour éviter que la boutique ne soit noyée sous les faux comptes. ' +
+      'Touche la bonne réponse, ou écris-la.',
+    { reply_markup: clavierDEpreuve(epreuve.choix) }
+  );
+
+/**
+ * Le péage d'entrée, posé avant tous les gestes de client.
+ *
+ * Il ne s'applique ni à l'administrateur — le vendeur n'a pas à se justifier
+ * auprès de sa propre boutique — ni à qui a déjà commandé ici : lui demander
+ * de calculer serait le prendre pour un inconnu. Et il se coupe d'un
+ * interrupteur, comme tout le reste.
+ */
+// Le registre, en tout premier : on note chaque personne qui touche le bot
+// avant même la porte d'entrée, pour qu'un curieux qui ne passe jamais le
+// calcul soit compté comme visiteur. Une panne du registre ne bloque rien —
+// c'est une observation, pas un contrôle.
+bot.use(async (ctx, next) => {
+  if (ctx.from) {
+    noterUtilisateur(ctx.from).catch(() => {});
+    // Quelqu'un qui écrit au bot est là maintenant — et il attend souvent une
+    // réponse, ce qui n'est pas le cas de quelqu'un qui parcourt le catalogue.
+    noterPassage(ctx.from.id, 'conversation');
+  }
+  return next();
+});
+
+/* ── La porte du secours, avant celle du calcul ────────────
+
+   Un bot de vente se fait fermer, et Telegram interdit à un bot d'écrire le
+   premier à qui ne lui a jamais écrit. Le registre des joignables ne peut
+   donc se remplir que pendant que ce bot-ci fonctionne — le jour où il
+   faudra s'en servir, il sera trop tard pour le demander.
+
+   D'où ce péage, posé AVANT le calcul : un premier visiteur écrit au bot de
+   secours, puis seulement résout l'addition, puis entre. Deux gestes au lieu
+   d'un, et c'est cher — c'est le prix de ne pas perdre toute sa clientèle
+   d'un coup, et il ne se paie qu'une fois.
+
+   Quatre personnes n'y sont pas soumises : le vendeur, qui n'a pas à
+   s'enregistrer auprès de sa propre boutique ; qui a déjà commandé ici, à qui
+   on ne va pas poser une condition nouvelle après coup ; qui arrive depuis la
+   Mini App, déjà signé par Telegram ; et tout le monde, si la boutique n'a
+   pas de second bot ou si le vendeur a éteint l'interrupteur. */
+
+// Le lien arrive entier : sa charge utile est posée par `lienDuSecours`, qui
+// seule sait la forme d'une adresse de bot.
+const clavierDuSecours = (lien) =>
+  new InlineKeyboard()
+    .url('🆘 Ouvrir le bot de secours', lien)
+    .row()
+    .text("J'ai écrit au bot de secours", 'sec:fait');
+
+const demanderLeSecours = (ctx, lien, avant = '') =>
+  ctx.reply(
+    `${avant}🆘 Une seconde avant d'entrer.\n\n` +
+      'Cette boutique a un second bot, au cas où celui-ci disparaîtrait. ' +
+      "Écris-lui une fois — un simple /start suffit — et reviens ici.\n\n" +
+      "C'est demandé une seule fois, et ce n'est pas une formalité : sans ce " +
+      'message, Telegram ne me laissera jamais te donner la nouvelle adresse ' +
+      "le jour où cette conversation s'arrêtera.",
+    { reply_markup: clavierDuSecours(lien) }
+  );
+
+bot.use(async (ctx, next) => {
+  const id = ctx.from?.id;
+  if (!id || (await isAdmin(id))) return next();
+  // Comme pour le calcul : `/admin` laisse un vendeur non déclaré trouver son
+  // identifiant, et `/secours` est justement ce qu'on lui demande d'aller
+  // faire — lui opposer le péage qu'il vient chercher n'aurait pas de sens.
+  if (/^\/(?:admin|secours)(?:@\S+)?(?:\s|$)/.test(ctx.message?.text ?? '')) return next();
+  if (!configureSecours()) return next();
+  if (!(await getSettings()).features.porteSecours) return next();
+  if (await estInscritAuSecours(id)) return next();
+  if (ctx.message?.web_app_data || (await listOrders({ userId: id, limit: 1 })).length) return next();
+
+  // Sans lien, pas de péage : on ne peut pas demander d'aller quelque part
+  // sans dire où. Le nom du second bot manque, ou Telegram ne l'a pas rendu.
+  const lien = await lienDuSecours().catch(() => '');
+  if (!lien) return next();
+
+  // « C'est fait » : on vérifie, on ne croit pas sur parole. Le registre est
+  // écrit par le bot de secours lui-même, dans ce même processus.
+  if (ctx.callbackQuery?.data === 'sec:fait') {
+    await ctx.answerCallbackQuery("Je ne t'ai pas encore vu là-bas.").catch(() => {});
+    return demanderLeSecours(
+      ctx,
+      lien,
+      "⏳ Je ne t'ai pas encore vu chez le bot de secours.\n\n" +
+        'Touche le bouton du haut, envoie-lui /start, puis reviens.\n\n'
+    );
+  }
+
+  if (ctx.callbackQuery) await ctx.answerCallbackQuery().catch(() => {});
+  return demanderLeSecours(ctx, lien);
+});
+
+bot.use(async (ctx, next) => {
+  const id = ctx.from?.id;
+  if (!id || (await isAdmin(id))) return next();
+  // `/admin` reste ouvert : c'est la commande par laquelle un vendeur découvre
+  // son identifiant Telegram pour se déclarer. Lui opposer un calcul le
+  // laisserait devant une porte dont il cherche justement la clé — et elle ne
+  // donne rien d'autre que ce mode d'emploi à qui n'est pas déclaré.
+  if (/^\/admin(?:@\S+)?(?:\s|$)/.test(ctx.message?.text ?? '')) return next();
+  // `/secours` non plus : c'est la sortie de secours. Opposer un calcul à
+  // qui vient chercher l'adresse de repli, c'est fermer la porte qu'on
+  // vient de poser — et elle ne livre rien d'autre qu'un lien public.
+  if (/^\/secours(?:@\S+)?(?:\s|$)/.test(ctx.message?.text ?? '')) return next();
+  if (!(await getSettings()).features.botCaptcha) return next();
+  if (await estPasse(id)) return next();
+
+  // Un client d'avant, ou d'avant l'épreuve : sa porte est déjà franchie.
+  // Un message venu de la Mini App aussi — il est signé par Telegram, ce qui
+  // vaut mieux qu'un calcul, et arrive après une commande déjà enregistrée.
+  if (ctx.message?.web_app_data || (await listOrders({ userId: id, limit: 1 })).length) {
+    await ouvrirLaPorte(id);
+    return next();
+  }
+
+  // Une réponse arrive de deux façons : le bouton touché, ou le nombre écrit.
+  const touche = ctx.callbackQuery?.data?.match(/^cap:(\d{1,3})$/)?.[1];
+  const ecrit = touche ? null : ctx.message?.text?.trim().match(/^\d{1,3}$/)?.[0];
+  const valeur = touche ?? ecrit;
+
+  if (valeur !== null && valeur !== undefined) {
+    const verdict = await repondre(id, valeur);
+    if (touche) await ctx.answerCallbackQuery(verdict.ok ? '✅' : '❌').catch(() => {});
+
+    if (verdict.ok) {
+      await ctx.reply('✅ Merci, c\'est bien ce que je voulais lire.');
+      return accueillir(ctx);
+    }
+    if (verdict.pause) {
+      return ctx.reply(
+        `⏳ Trop d'essais. Réessaie dans ${verdict.pause} minute${verdict.pause > 1 ? 's' : ''}.`
+      );
+    }
+    const avant = verdict.raison === 'faux'
+      ? `❌ Ce n'est pas ça — encore ${verdict.restants} essai${verdict.restants > 1 ? 's' : ''}.\n\n`
+      : '';
+    return poserLEpreuve(ctx, verdict.epreuve, avant);
+  }
+
+  // Ni bouton ni nombre : on (re)pose la question, quoi qu'on nous ait écrit.
+  if (ctx.callbackQuery) await ctx.answerCallbackQuery().catch(() => {});
+  const porte = await demanderLEpreuve(id);
+  if (porte.passe) return next();
+  if (porte.pause) {
+    return ctx.reply(
+      `⏳ Trop d'essais. Réessaie dans ${porte.pause} minute${porte.pause > 1 ? 's' : ''}.`
+    );
+  }
+  return poserLEpreuve(ctx, porte.epreuve);
+});
+
+bot.command('start', accueillir);
+
+/**
+ * La porte de secours, à la demande.
+ *
+ * Deux réponses selon qui demande : le client reçoit le lien, le vendeur
+ * reçoit en plus le compte de ceux qui l'ont enregistré. C'est le seul
+ * chiffre qui dise si le filet existe vraiment — une boutique de six cents
+ * clients dont douze ont écrit au secours n'a pas de filet, elle a douze
+ * clients sauvés.
+ */
+bot.command('secours', async (ctx) => {
+  const lien = await lienDuSecours().catch(() => '');
+  if (!lien) {
+    return ctx.reply(
+      "Il n'y a pas de bot de secours sur cette boutique pour l'instant." +
+        ((await isAdmin(ctx.from.id))
+          ? '\n\nPour en poser un : crée un second bot chez @BotFather, puis ' +
+            'renseigne BOT_TOKEN_SECOURS dans le .env et redémarre.'
+          : '')
+    );
+  }
+  if (await isAdmin(ctx.from.id)) {
+    const n = await combienAuSecours().catch(() => 0);
+    const etat = await santeDesPortes().catch(() => ({}));
+    return ctx.reply(
+      `🆘 Bot de secours : ${lien}\n\n` +
+        `${n} client(s) l'ont enregistré — ce sont les seuls que je pourrai ` +
+        'prévenir si ce bot-ci disparaît.\n' +
+        `Principal : ${etat.principal?.vivant === false ? `muet (${etat.principal.raison ?? '?'})` : 'debout'}\n` +
+        `Secours : ${etat.secours?.vivant === false ? `muet (${etat.secours.raison ?? '?'})` : 'debout'}`
+    );
+  }
+  return ctx.reply(
+    `🆘 La porte de secours : ${lien}\n\n` +
+      "Écris-lui une fois. C'est la même boutique, et c'est là que tu recevras " +
+      'la nouvelle adresse si cette conversation venait à disparaître.'
+  );
+});
+
+bot.command('boutique', (ctx) =>
+  ctx.reply('Voilà le catalogue 👇', { reply_markup: shopKeyboard() })
+);
+
+bot.command('commandes', async (ctx) => {
+  // Le même interrupteur que l'écran « Mes commandes » de la Mini App : une
+  // porte fermée d'un côté et ouverte de l'autre n'en est pas une.
+  if (!(await getSettings()).features.orderHistory) {
+    return ctx.reply("L'historique des commandes n'est pas disponible ici.", {
+      reply_markup: shopKeyboard(),
+    });
+  }
+
+  const orders = await listOrders({ userId: ctx.from.id, limit: 5 });
+  if (!orders.length) {
+    return ctx.reply("Tu n'as pas encore passé de commande.", { reply_markup: shopKeyboard() });
+  }
+  const lines = orders.map(
+    (o) =>
+      `${o.reference} — ${formatPrice(o.total)} — ${o.status}\n` +
+      `  ${new Date(o.createdAt).toLocaleDateString('fr-FR')}`
+  );
+  await ctx.reply(`Tes dernières commandes :\n\n${lines.join('\n')}`);
+});
+
+bot.command('stop', async (ctx) => {
+  await desabonner(ctx.from.id);
+  await ctx.reply(
+    '🔕 C\'est noté : tu ne recevras plus d\'annonce.\n\n' +
+      'Les messages sur tes propres commandes continuent, eux : ce sont des ' +
+      'réponses, pas de la publicité. Écris /annonces pour revenir en arrière.'
+  );
+});
+
+bot.command('annonces', async (ctx) => {
+  const coupe = await estDesabonne(ctx.from.id);
+  if (!coupe) {
+    return ctx.reply('🔔 Tu reçois déjà les annonces. Écris /stop pour ne plus en recevoir.');
+  }
+  await reabonner(ctx.from.id);
+  await ctx.reply('🔔 C\'est reparti : tu recevras de nouveau les annonces.');
+});
+
+/**
+ * Un identifiant déclaré qui ne diffère du demandeur que d'un caractère.
+ *
+ * À l'installation, l'identifiant se recopie à la main depuis un message : le
+ * chiffre en trop ou en moins est l'erreur la plus commune, et la plus pénible
+ * à voir — deux nombres de dix chiffres se ressemblent trop pour qu'on repère
+ * l'écart à l'œil. Autant le désigner.
+ */
+function presqueLeMeme(demandeur, declares) {
+  const a = String(demandeur);
+  return declares.find((b) => {
+    if (b === a) return false;
+    const [court, long] = a.length <= b.length ? [a, b] : [b, a];
+    if (long.length - court.length > 1) return false;
+
+    if (long.length === court.length) {
+      // Un seul caractère qui diffère, à la même position.
+      let ecarts = 0;
+      for (let i = 0; i < long.length; i++) if (long[i] !== court[i]) ecarts++;
+      return ecarts === 1;
+    }
+    // Un caractère de plus : le long est-il le court avec une insertion ?
+    for (let i = 0; i < long.length; i++) {
+      if (long.slice(0, i) + long.slice(i + 1) === court) return true;
+    }
+    return false;
+  });
+}
+
+bot.command('admin', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    // « Réservé à l'administrateur » laisse sans recours celui qui EST le
+    // patron mais dont l'identifiant n'a pas été déclaré — le cas de loin le
+    // plus fréquent à l'installation. On lui donne donc ce qui lui manque :
+    // son identifiant, et où l'écrire.
+    const tous = (await listerAdmins()).map((a) => a.id);
+    const rien = tous.length === 0;
+    // La faute de frappe ne se cherche que dans le `.env` : c'est le seul
+    // endroit où un identifiant se recopie à la main, et donc le seul où il
+    // peut se tromper d'un caractère.
+    const voisin = presqueLeMeme(ctx.from.id, config.adminIds);
+    return ctx.reply(
+      "Cet espace est réservé à l'administrateur.\n\n" +
+        `Ton identifiant Telegram : ${ctx.from.id}\n` +
+        (rien
+          ? "Aucun administrateur n'est déclaré pour l'instant."
+          : `Déclarés pour l'instant : ${tous.join(', ')}`) +
+        (voisin
+          ? `\n\n⚠️ ${voisin} ne diffère du tien que d'un caractère : c'est ` +
+            'très probablement une faute de frappe dans .env.'
+          : '') +
+        '\n\nSi la boutique est la tienne, ajoute ton identifiant à ADMIN_IDS ' +
+        'dans le fichier .env, puis redémarre la boutique.\n' +
+        'Si elle est à quelqu\'un d\'autre, il peut te donner les clés avec ' +
+        `/addadmin ${ctx.from.id}`
+    );
+  }
+  // Mieux vaut expliquer que laisser Telegram rejeter le message : sans URL,
+  // la commande ne répondait rien du tout.
+  if (!urlUtilisable()) return ctx.reply(PAS_D_URL);
+
+  await ctx.reply(
+    'Gestion du stock, des produits et des commandes 👇\n\n' + COMMANDES_DU_VENDEUR,
+    { reply_markup: adminKeyboard() }
+  );
+});
+
+/**
+ * L'adresse du panneau admin, en clair, pour qu'on puisse la copier.
+ *
+ * `/admin` pose un BOUTON Mini App — pratique, mais on ne copie pas un
+ * bouton. On ne le met pas en favori, on ne se l'envoie pas sur un autre
+ * appareil, et on ne vérifie pas d'un coup d'œil que `WEBAPP_URL` pointe où
+ * l'on croit. D'où cette commande, qui rend le texte.
+ *
+ * Silencieuse pour qui n'est pas admin : refuser en toutes lettres apprend
+ * surtout à un curieux que la commande existe.
+ *
+ * L'aperçu de lien est coupé : Telegram irait chercher la page et collerait
+ * une vignette de la boutique sous le message, pour une adresse qu'on veut
+ * juste lire.
+ */
+bot.command('linkadmin', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) return;
+  if (!urlUtilisable()) return ctx.reply(PAS_D_URL);
+
+  await ctx.reply(
+    '⚙️ Espace admin\n\n' +
+      `${lienDuPanneau()}\n\n` +
+      'À ouvrir DEPUIS Telegram — le bouton ci-dessous, ou ce lien collé dans ' +
+      'une conversation.\n\n' +
+      "Collé dans un navigateur ordinaire, la page s'affiche mais reste vide : " +
+      'le panneau se signe avec ton compte Telegram, et le serveur refuse ' +
+      'tout ce qui arrive sans cette signature.',
+    { reply_markup: adminKeyboard(), link_preview_options: { is_disabled: true } }
+  );
+});
+
+/**
+ * Ce que le vendeur peut taper. Ici et nulle part ailleurs.
+ *
+ * C'était `/aide`, ouvert à tout le monde. Une liste de commandes affichée à
+ * un client lui apprend surtout qu'il en existe d'autres : il essaie
+ * `/annonce`, `/addadmin`, et se fait refuser — ce qui lui confirme qu'elles
+ * existent. Le vendeur, lui, a un seul endroit où les retrouver, et c'est
+ * celui qu'il ouvre déjà.
+ */
+const COMMANDES_DU_VENDEUR =
+  'Tes commandes :\n' +
+  '/ouvrir, /fermer — ouvrir ou fermer la boutique\n' +
+  '/verification [on|off] — contrôle des pièces d\'identité\n' +
+  '/enligne — les visites de la dernière demi-heure\n' +
+  '/annonce <texte> — écrire à tous ceux qui ont ouvert le bot\n' +
+  '/secours — la porte de secours, et qui l\'a enregistrée\n' +
+  '/linkadmin — l\'adresse du panneau admin, en clair\n' +
+  '/admins — qui a les clés\n' +
+  '/addadmin, /deladmin — donner ou reprendre les clés\n' +
+  '📸 une photo avec le nom du produit en légende change son image';
+
+/** Ouvre ou ferme la boutique sans quitter la conversation. */
+for (const [command, open] of [['ouvrir', true], ['fermer', false]]) {
+  bot.command(command, async (ctx) => {
+    if (!(await isAdmin(ctx.from.id))) {
+      return ctx.reply("Cette commande est réservée à l'administrateur.");
+    }
+    await saveSettings({ opening: { open } });
+    await ctx.reply(
+      open
+        ? '🟢 Boutique ouverte : les commandes repassent.'
+        : '🔴 Boutique fermée : les commandes sont refusées avec ton message.'
+    );
+  });
+}
+
+/**
+ * Active ou coupe la vérification d'identité depuis la conversation.
+ *
+ *   /verification        → l'état actuel, avec les boutons
+ *   /verification on|off → bascule directe
+ */
+bot.command('verification', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const argument = (ctx.match ?? '').trim().toLowerCase();
+  if (argument === 'on' || argument === 'off') {
+    const enabled = argument === 'on';
+    await saveSettings({ verification: { enabled } });
+    return ctx.reply(
+      enabled
+        ? '🪪 Vérification activée : un client doit faire valider une pièce d\'identité avant de commander.'
+        : '🪪 Vérification désactivée : la boutique est ouverte sans contrôle de pièce.'
+    );
+  }
+
+  const settings = await getSettings();
+  await ctx.reply(
+    `🪪 Vérification d'identité : ${settings.verification.enabled ? 'activée' : 'désactivée'}.`,
+    {
+      reply_markup: new InlineKeyboard()
+        .text('✅ Activer', 'vfset:on')
+        .text('⛔ Désactiver', 'vfset:off'),
+    }
+  );
+});
+
+bot.callbackQuery(/^vfset:(on|off)$/, async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.answerCallbackQuery({ text: "Réservé à l'administrateur.", show_alert: true });
+  }
+  const enabled = ctx.match[1] === 'on';
+  await saveSettings({ verification: { enabled } });
+  await ctx.answerCallbackQuery({ text: enabled ? 'Vérification activée' : 'Vérification désactivée' });
+  await ctx.editMessageText(
+    `🪪 Vérification d'identité : ${enabled ? 'activée' : 'désactivée'}.`
+  );
+});
+
+/**
+ * Une image arrive dans la conversation.
+ *
+ * Deux usages selon l'expéditeur : le vendeur met à jour la photo d'un
+ * produit, un client fait vérifier sa pièce d'identité. Un seul point d'entrée
+ * évite que le premier gestionnaire avale l'image du second.
+ */
+bot.on(['message:photo', 'message:video', 'message:animation', 'message:document'], async (ctx) => {
+  const settings = await getSettings();
+
+  if (await isAdmin(ctx.from.id)) {
+    if (!settings.features.photos) {
+      return ctx.reply('Les photos par le bot sont désactivées (Réglages → Fonctionnalités).');
+    }
+    return handleProductPhoto(ctx);
+  }
+
+  // Une vidéo n'est jamais une pièce d'identité : la proposer au contrôle
+  // n'aurait aucun sens, et le vendeur seul envoie des visuels.
+  if (ctx.message.video || ctx.message.animation) {
+    return ctx.reply("Merci, mais on n'attend pas de vidéo de ta part.");
+  }
+
+  // Sans vérification active, une pièce d'identité reçue serait une donnée
+  // sensible qu'on n'a aucune raison de manipuler : on le dit tout de suite.
+  if (!settings.features.verification) {
+    return ctx.reply("Merci, mais aucune pièce d'identité n'est demandée pour commander ici.");
+  }
+  return handleIdentityDocument(ctx);
+});
+
+/**
+ * Photo de produit : la légende dit quel produit.
+ *
+ * Le fichier reste chez Telegram — on n'enregistre que sa référence. Rien à
+ * écrire sur le disque, donc ça marche aussi bien sur un VPS qu'en serverless.
+ */
+async function handleProductPhoto(ctx) {
+  const caption = ctx.message.caption ?? '';
+  const { products } = await getCatalog({ includeHidden: true });
+
+  if (!caption.trim()) {
+    return ctx.reply(
+      '📸 Renvoie la photo ou la vidéo en écrivant le produit en légende.\n\n' +
+        `Par exemple : ${products[0]?.name ?? 'nom du produit'}`
+    );
+  }
+
+  const { match, candidates } = matchProduct(caption, products);
+  if (!match) {
+    const liste = (candidates.length ? candidates : products)
+      .slice(0, 8)
+      .map((p) => `• ${p.name}`)
+      .join('\n');
+    return ctx.reply(
+      candidates.length
+        ? `Plusieurs produits correspondent :\n${liste}\n\nPrécise la légende.`
+        : `Aucun produit ne correspond à « ${caption} ».\n\nProduits :\n${liste}`
+    );
+  }
+
+  const media = mediaDuMessage(ctx.message);
+  if (media.erreur) return ctx.reply(media.erreur);
+
+  // Telegram ne laisse pas un bot télécharger au-delà de vingt mégaoctets :
+  // une vidéo plus lourde s'enregistrerait sans broncher et ne s'afficherait
+  // jamais. Mieux vaut refuser en disant quoi faire.
+  if (media.octets && media.octets > 20 * 1024 * 1024) {
+    return ctx.reply(
+      `${{ video: 'Cette vidéo', gif: 'Ce GIF' }[media.kind] ?? 'Ce fichier'} pèse ` +
+        `${Math.round(media.octets / 1024 / 1024)} Mo, et Telegram ` +
+        "ne laisse pas un bot en télécharger plus de 20.\n\n" +
+        'Raccourcis-le, ou baisse sa qualité avant de le renvoyer.'
+    );
+  }
+
+  try {
+    const produit = await addProductMedia(match.id, {
+      kind: media.kind,
+      fileId: media.fileId,
+      thumbFileId: media.thumbFileId,
+    });
+    const combien = produit.media.length;
+    await ctx.reply(
+      `✅ ${{ video: 'Vidéo ajoutée', gif: 'GIF ajouté' }[media.kind] ?? 'Photo ajoutée'} à « ${match.name} » ` +
+        `(${combien} média${combien > 1 ? 's' : ''} sur ${MEDIA_MAX}).\n\n` +
+        "L'ordre et la suppression se règlent dans l'espace admin, sur la fiche du produit."
+    );
+  } catch (err) {
+    await ctx.reply(`Impossible d'enregistrer : ${err.message}`);
+  }
+}
+
+/**
+ * Reconnaît ce que le message transporte.
+ *
+ * Telegram range la même chose à trois endroits selon la façon de l'envoyer :
+ * `photo` pour une image compressée, `video` pour une vidéo, `document` pour un
+ * envoi « sans compression ». Un GIF arrive en `animation`, et se comporte
+ * comme une vidéo muette.
+ */
+/**
+ * La vignette que Telegram fabrique pour une vidéo.
+ *
+ * C'est une petite image JPEG — quelques kilo-octets — extraite du début du
+ * film. Elle vaut de l'or côté boutique : affichée en `poster`, elle apparaît
+ * tout de suite là où la vidéo, elle, met le temps qu'il faut pour arriver.
+ *
+ * `thumb` était son nom avant Bot API 7.0 : un serveur Bot API auto-hébergé
+ * plus ancien répond encore comme ça.
+ */
+function vignetteDe(media) {
+  return media?.thumbnail?.file_id ?? media?.thumb?.file_id ?? '';
+}
+
+function mediaDuMessage(message) {
+  if (message.photo) {
+    // Le dernier élément est la plus grande taille disponible.
+    const grande = message.photo.at(-1);
+    return { kind: 'photo', fileId: grande.file_id, octets: grande.file_size };
+  }
+  if (message.video) {
+    return {
+      kind: 'video',
+      fileId: message.video.file_id,
+      thumbFileId: vignetteDe(message.video),
+      octets: message.video.file_size,
+    };
+  }
+  // Une animation, c'est un GIF que Telegram a converti en MP4 muet. La
+  // ranger parmi les vidéos lui donnait des contrôles de lecture et un bouton
+  // « play » : le vendeur envoyait un GIF et recevait un film à démarrer.
+  if (message.animation) {
+    return {
+      kind: 'gif',
+      fileId: message.animation.file_id,
+      thumbFileId: vignetteDe(message.animation),
+      octets: message.animation.file_size,
+    };
+  }
+  if (message.document) {
+    const mime = message.document.mime_type ?? '';
+    if (mime.startsWith('image/gif')) {
+      return {
+        kind: 'gif',
+        fileId: message.document.file_id,
+        thumbFileId: vignetteDe(message.document),
+        octets: message.document.file_size,
+      };
+    }
+    if (mime.startsWith('image/')) {
+      return { kind: 'photo', fileId: message.document.file_id, octets: message.document.file_size };
+    }
+    if (mime.startsWith('video/')) {
+      return {
+        kind: 'video',
+        fileId: message.document.file_id,
+        thumbFileId: vignetteDe(message.document),
+        octets: message.document.file_size,
+      };
+    }
+    return { erreur: "Ce fichier n'est ni une image ni une vidéo." };
+  }
+  return { erreur: "Je n'ai pas reconnu ce fichier." };
+}
+
+/**
+ * Pièce d'identité d'un client.
+ *
+ * Le document n'est ni téléchargé ni enregistré : il est transféré tel quel au
+ * vendeur, qui le regarde dans Telegram puis le supprime. La boutique ne garde
+ * que le verdict.
+ */
+async function handleIdentityDocument(ctx) {
+  const settings = await getSettings();
+  if (!settings.verification.enabled) {
+    return ctx.reply("Merci, mais aucune vérification n'est demandée en ce moment.");
+  }
+
+  await requestVerification(ctx.from.id);
+  await ctx.reply(
+    '🪪 Bien reçu. Ta pièce part en vérification, tu recevras la réponse ici.\n\n' +
+      'Elle n\'est pas enregistrée par la boutique : tu peux supprimer ton message ' +
+      'dès que la vérification est faite.'
+  );
+
+  if (!adminAPrevenir()) {
+    return console.warn('ADMIN_CHAT_ID absent : pièce reçue mais personne à prévenir.');
+  }
+
+  try {
+    await ctx.api.forwardMessage(adminAPrevenir(), ctx.chat.id, ctx.message.message_id);
+    const who = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name ?? 'client';
+    await ctx.api.sendMessage(
+      adminAPrevenir(),
+      `🪪 Vérification demandée par ${who} (id ${ctx.from.id}).\n` +
+        'Regarde le document ci-dessus, tranche, puis supprime-le de la conversation.',
+      {
+        reply_markup: new InlineKeyboard()
+          .text('✅ Valider', `vf:${ctx.from.id}:approved`)
+          .text('❌ Refuser', `vf:${ctx.from.id}:refused`),
+      }
+    );
+  } catch (err) {
+    console.error('Transfert de la pièce impossible :', err.message);
+  }
+}
+
+/** Verdict du vendeur, d'un appui, sans quitter la conversation. */
+bot.callbackQuery(/^vf:(\d+):(approved|refused)$/, async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.answerCallbackQuery({ text: "Réservé à l'administrateur.", show_alert: true });
+  }
+
+  const [, userId, status] = ctx.match;
+  await decideVerification(userId, status, ctx.from.id);
+
+  const validated = status === 'approved';
+  await ctx.answerCallbackQuery({ text: validated ? 'Client validé' : 'Client refusé' });
+  await ctx.editMessageText(
+    `🪪 Client ${userId} — ${validated ? '✅ validé' : '❌ refusé'}.\n` +
+      'Pense à supprimer le document de la conversation.'
+  );
+
+  try {
+    await ctx.api.sendMessage(
+      Number(userId),
+      validated
+        ? '✅ Vérification acceptée. La boutique t\'est ouverte, bonne visite !'
+        : "❌ Vérification refusée. Écris-nous si tu penses que c'est une erreur."
+    );
+  } catch (err) {
+    console.error('Réponse au client impossible :', err.message);
+  }
+});
+
+/* ── Les clés de la boutique ─────────────────────────────── */
+
+/**
+ * Donner les clés à quelqu'un, depuis la conversation.
+ *
+ *   /addadmin 123456789
+ *   /addadmin @pseudo
+ *
+ * Un administrateur voit toutes les commandes, toutes les fiches clients, et
+ * peut effacer l'historique. Ce n'est donc pas un réglage : c'est une remise de
+ * clés, et elle se fait en deux temps — on montre à qui, puis on confirme.
+ * Sans cette confirmation, un identifiant mal recopié donnerait la boutique à
+ * un inconnu sans que rien ne s'y oppose.
+ */
+bot.command('addadmin', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const argument = (ctx.match ?? '').trim();
+  if (!argument) {
+    return ctx.reply(
+      'Donne l\'identifiant ou le pseudo de la personne :\n\n' +
+        '/addadmin 123456789\n' +
+        '/addadmin @pseudo\n\n' +
+        'Elle trouve son identifiant en envoyant /admin au bot.\n' +
+        '/admins te dit qui a les clés aujourd\'hui.'
+    );
+  }
+
+  const trouvee = await resoudreQuelquun(argument);
+  if (trouvee.erreur) return ctx.reply(`⚠️ ${trouvee.erreur}`);
+
+  if (await isAdmin(trouvee.id)) {
+    return ctx.reply(`${nommer(trouvee)} est déjà administrateur.`);
+  }
+
+  await ctx.reply(
+    `🔑 Donner les clés à ${nommer(trouvee)} ?\n\n` +
+      'Il pourra voir toutes les commandes, toutes les fiches clients, ' +
+      'modifier le catalogue et effacer l\'historique.\n\n' +
+      'À ne faire que pour quelqu\'un en qui tu as confiance.',
+    {
+      reply_markup: new InlineKeyboard()
+        .text('✅ Donner les clés', `adm+:${trouvee.id}`)
+        .row()
+        .text('Annuler', 'adm:non'),
+    }
+  );
+});
+
+/** Reprendre les clés. Sans confirmation : c'est le geste prudent des deux. */
+bot.command('deladmin', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const argument = (ctx.match ?? '').trim();
+  if (!argument) {
+    return ctx.reply('Qui ?\n\n/deladmin 123456789\n/deladmin @pseudo\n\n/admins te donne la liste.');
+  }
+
+  const trouvee = await resoudreQuelquun(argument);
+  if (trouvee.erreur) return ctx.reply(`⚠️ ${trouvee.erreur}`);
+
+  try {
+    await retirerAdmin(trouvee.id);
+    await ctx.reply(`🔒 ${nommer(trouvee)} n'est plus administrateur.`);
+    // On le lui dit : découvrir la porte fermée sans explication, c'est une
+    // conversation pénible que personne n'a envie d'avoir.
+    await bot.api
+      .sendMessage(Number(trouvee.id), `Tes accès administrateur de ${config.shopName} ont été retirés.`)
+      .catch(() => {});
+  } catch (err) {
+    await ctx.reply(`⚠️ ${err.message}`);
+  }
+});
+
+/**
+ * Qui est dans la boutique en ce moment.
+ *
+ * Le libellé dit « actif », jamais « en ligne » : Telegram ne donne pas le
+ * statut en ligne aux bots, et laisser croire le contraire ferait chercher une
+ * panne le jour où un client « hors ligne » passe commande.
+ */
+bot.command('enligne', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const minutes = Math.round(FENETRE_MS / 60000);
+  const memoire = Math.round(MEMOIRE_MS / 60000);
+  // Sans les administrateurs : celui qui tape la commande se comptait
+  // lui-même, et « 1 personne active » quand on est seul est une fausse joie.
+  const passages = visitesDesClients((await listerAdmins()).map((a) => a.id));
+
+  if (!passages.length) {
+    return ctx.reply(`👤 Aucune visite depuis ${memoire} minutes.`);
+  }
+
+  const ici = passages.filter((p) => p.actif);
+  const lignes = await Promise.all(
+    passages.slice(0, 30).map(async (p) => {
+      const fiche = await ficheDuRegistre(p.id).catch(() => null);
+      const qui = fiche?.username ? `@${fiche.username}` : fiche?.prenom ?? `#${p.id}`;
+      const ou = p.ou === 'conversation' ? '💬' : '🛒';
+      const depuis = p.depuis < 60 ? "à l'instant" : `il y a ${Math.round(p.depuis / 60)} min`;
+      // Le point vert distingue celui qui est encore là de celui qui vient de
+      // partir : c'est la seule chose qui change ce qu'on en fait.
+      return `${p.actif ? '🟢' : '·'} ${qui} — ${ou} ${depuis}` +
+        (p.passages > 1 ? ` (${p.passages} passages)` : '');
+    })
+  );
+
+  await ctx.reply(
+    `👤 ${passages.length} visite${passages.length > 1 ? 's' : ''} sur ${memoire} min` +
+      `\n🟢 ${ici.length} encore là\n\n` +
+      lignes.join('\n') +
+      (passages.length > 30 ? `\n… et ${passages.length - 30} autre(s)` : '') +
+      `\n\n🟢 = signe de vie dans les ${minutes} dernières minutes. ` +
+      'Telegram ne dit pas à un bot qui est en ligne : ceci compte ce qui se passe ici.'
+  );
+});
+
+/** Qui a les clés, et d'où elles viennent. */
+bot.command('admins', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const liste = await listerAdmins();
+  const lignes = liste.map((a) => {
+    const qui = a.username ? `@${a.username}` : a.nom ?? `#${a.id}`;
+    // La provenance dit ce qu'on peut faire de cette ligne : un « fichier » ne
+    // se retire que sur le serveur, et le savoir évite d'essayer pour rien.
+    const ou = a.source === 'fichier' ? '🔒 fichier .env' : '🤖 ajouté depuis le bot';
+    return `• ${qui} — ${a.id}\n  ${ou}`;
+  });
+
+  await ctx.reply(
+    `🔑 ${liste.length} administrateur${liste.length > 1 ? 's' : ''}\n\n${lignes.join('\n')}\n\n` +
+      'Les administrateurs du fichier .env ne se retirent que sur le serveur : ' +
+      "c'est ce qui garantit qu'une conversation ne peut pas te mettre dehors de ta propre boutique."
+  );
+});
+
+bot.callbackQuery(/^adm\+:(\d+)$/, async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.answerCallbackQuery({ text: "Réservé à l'administrateur.", show_alert: true });
+  }
+
+  const cible = ctx.match[1];
+  try {
+    const fiche = await ficheDuRegistre(cible);
+    await ajouterAdmin(cible, {
+      par: ctx.from.id,
+      nom: fiche?.prenom ?? null,
+      username: fiche?.username ?? null,
+    });
+
+    await ctx.answerCallbackQuery({ text: '🔑 Clés données.' });
+    await ctx.editMessageText(
+      `🔑 ${fiche?.username ? `@${fiche.username}` : fiche?.prenom ?? `#${cible}`} est administrateur.\n\n` +
+        'Il ouvre l\'espace admin avec /admin. Pour reprendre les clés : ' +
+        `/deladmin ${cible}`
+    );
+
+    // Le prévenir, sinon il ne saura jamais qu'il peut entrer.
+    await bot.api
+      .sendMessage(
+        Number(cible),
+        `🔑 Tu es maintenant administrateur de ${config.shopName}.\n\n` +
+          'Envoie /admin pour ouvrir l\'espace de gestion.',
+        { reply_markup: adminKeyboard() }
+      )
+      .catch(() => {});
+  } catch (err) {
+    await ctx.answerCallbackQuery({ text: err.message?.slice(0, 180) ?? 'Raté.', show_alert: true });
+  }
+});
+
+bot.callbackQuery('adm:non', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Annulé.' });
+  await ctx.editMessageText('Annulé, personne n\'a reçu les clés.');
+});
+
+/**
+ * Un identifiant ou un pseudo, ramenés à quelqu'un.
+ *
+ * Telegram ne sait pas convertir un pseudo en identifiant pour le compte d'un
+ * bot : seul le registre le permet, et seulement pour qui a déjà écrit au bot.
+ * Le refus doit donc dire quoi faire — « qu'il t'écrive d'abord » est la seule
+ * manœuvre possible, et la deviner tout seul prend un quart d'heure.
+ */
+async function resoudreQuelquun(argument) {
+  const propre = argument.trim();
+
+  if (/^\d+$/.test(propre)) {
+    const fiche = await ficheDuRegistre(propre);
+    return { id: propre, nom: fiche?.prenom ?? null, username: fiche?.username ?? null };
+  }
+
+  if (/^@?[A-Za-z0-9_]{4,32}$/.test(propre)) {
+    const fiche = await trouverParPseudo(propre);
+    if (!fiche) {
+      return {
+        erreur:
+          `Je ne connais pas ${propre.startsWith('@') ? propre : `@${propre}`}.\n\n` +
+          "Demande-lui d'envoyer /start au bot, puis recommence — ou donne " +
+          'directement son identifiant numérique, qu\'il obtient avec /admin.',
+      };
+    }
+    return { id: String(fiche.id), nom: fiche.prenom ?? null, username: fiche.username ?? null };
+  }
+
+  return { erreur: 'Donne un identifiant numérique (123456789) ou un pseudo (@quelquun).' };
+}
+
+/** Comment nommer quelqu'un dans un message, avec ce qu'on a de lui. */
+function nommer(qui) {
+  if (qui.username) return `@${qui.username}`;
+  if (qui.nom) return `${qui.nom} (${qui.id})`;
+  return `#${qui.id}`;
+}
+
+/* ── Prévenir les abonnés ────────────────────────────────── */
+
+/**
+ * Propose au vendeur d'annoncer, plutôt que d'annoncer à sa place.
+ *
+ * Envoyer automatiquement à la création aurait été plus court à écrire et
+ * désastreux à l'usage : on crée un produit sans photo pour le remplir après,
+ * on en saisit cinq à la suite un dimanche soir, on se trompe de prix et on
+ * corrige dans la minute. Chacun de ces gestes aurait envoyé un message à toute
+ * la clientèle, sans rattrapage possible.
+ *
+ * Le vendeur reçoit donc le message tel qu'il partira, avec le nombre exact de
+ * destinataires, et un bouton. Un geste, une annonce — et le silence si on ne
+ * touche rien, ce qui est le bon défaut.
+ */
+export async function proposerAnnonce(canal, { titre, texte }) {
+  if (!adminAPrevenir()) return;
+
+  const settings = await getSettings();
+  if (!settings.features.announcements) return;
+
+  const cibles = await destinatairesDuCanal(await destinataires({ minCommandes: 1 }), canal);
+  if (!cibles.length) {
+    // Personne à prévenir : le dire une fois vaut mieux qu'un bouton qui
+    // n'enverra rien et laissera croire à une panne.
+    await bot.api
+      .sendMessage(adminAPrevenir(), `${titre}\n\nAucun client abonné à ce canal pour l'instant.`)
+      .catch(() => {});
+    return;
+  }
+
+  // Le texte voyage dans le message, pas dans une mémoire du serveur : un
+  // redémarrage entre la proposition et l'appui ne doit pas perdre l'annonce.
+  const brouillon = enAttente.deposer(canal, texte);
+
+  await bot.api
+    .sendMessage(
+      adminAPrevenir(),
+      `${titre}\n\n— — —\n${texte}\n— — —\n\n` +
+        `Envoyer à ${cibles.length} client${cibles.length > 1 ? 's' : ''} abonné${cibles.length > 1 ? 's' : ''} ?`,
+      {
+        reply_markup: new InlineKeyboard()
+          .text(`📣 Envoyer aux ${cibles.length}`, `ann:${brouillon}`)
+          .row()
+          .text('Pas maintenant', 'ann:non'),
+      }
+    )
+    .catch((err) => console.error('Proposition d\'annonce impossible :', err.message));
+}
+
+/**
+ * Les brouillons en attente d'un appui.
+ *
+ * En mémoire, volontairement : une annonce qu'on n'a pas envoyée dans l'heure
+ * n'est plus une annonce, c'est une vieille nouvelle. Le redémarrage les efface,
+ * et c'est le bon comportement — mieux vaut ne rien envoyer qu'envoyer lundi
+ * une nouveauté de vendredi.
+ */
+const enAttente = (() => {
+  const brouillons = new Map();
+  let suite = 0;
+
+  const nettoyer = () => {
+    const limite = Date.now() - 60 * 60 * 1000;
+    for (const [clef, b] of brouillons) if (b.quand < limite) brouillons.delete(clef);
+  };
+
+  return {
+    deposer(canal, texte) {
+      nettoyer();
+      const clef = String(++suite);
+      brouillons.set(clef, { canal, texte, quand: Date.now() });
+      return clef;
+    },
+    prendre(clef) {
+      nettoyer();
+      const b = brouillons.get(clef);
+      // Retiré à la prise : deux appuis sur le même bouton, c'est deux fois le
+      // même message chez trois cents personnes.
+      if (b) brouillons.delete(clef);
+      return b ?? null;
+    },
+  };
+})();
+
+/**
+ * Écrire à tout le monde, depuis la conversation.
+ *
+ *   /annonce Réassort ce soir, tout est en ligne.
+ *
+ * « Tout le monde », ici, c'est le registre : quiconque a déjà ouvert le bot,
+ * y compris ceux qui ont regardé le catalogue sans rien prendre — souvent les
+ * plus nombreux, et ceux qu'une réouverture ou un réassort intéresse le plus.
+ * La diffusion qui existait déjà partait des commandes et ne voyait donc que
+ * les acheteurs.
+ *
+ * Comme /addadmin, l'envoi passe par une confirmation, et pour la même raison :
+ * un message parti chez trois cents personnes ne se rattrape pas. Le vendeur
+ * voit d'abord le texte tel qu'il arrivera, avec le compte exact.
+ */
+bot.command('annonce', async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.reply("Cette commande est réservée à l'administrateur.");
+  }
+
+  const { texte, erreur } = texteValide(ctx.match ?? '');
+  if (erreur || !texte) {
+    return ctx.reply(
+      'Écris ton annonce après la commande :\n\n' +
+        '/annonce Réassort ce soir, tout est en ligne.\n\n' +
+        'Elle part à tous ceux qui ont déjà ouvert le bot, sauf ceux qui ont écrit /stop.' +
+        (erreur ? `\n\n⚠️ ${erreur}` : '')
+    );
+  }
+
+  if (!(await getSettings()).features.announcements) {
+    return ctx.reply(
+      'Les annonces sont désactivées (Réglages → Fonctionnalités).\n' +
+        'Rallume-les avant d\'écrire à tes clients.'
+    );
+  }
+
+  const cibles = await destinatairesDuRegistre();
+  if (!cibles.length) {
+    return ctx.reply("Personne n'a encore ouvert le bot — il n'y a personne à prévenir.");
+  }
+
+  // Le texte voyage dans le brouillon, pas dans une mémoire du serveur indexée
+  // par l'auteur : deux administrateurs qui préparent une annonce en même temps
+  // ne doivent pas s'écraser l'un l'autre.
+  const brouillon = enAttente.deposer('registre', texte);
+
+  await ctx.reply(
+    '📣 Voilà ce qui partira :\n\n' +
+      '— — —\n' +
+      `${texte}\n` +
+      '— — —\n\n' +
+      `Destinataires : ${cibles.length} personne${cibles.length > 1 ? 's' : ''} ` +
+      'ayant déjà ouvert le bot.\n' +
+      'Les désabonnés et les comptes bloqués en sont exclus.',
+    {
+      reply_markup: new InlineKeyboard()
+        .text(`📣 Envoyer aux ${cibles.length}`, `ann:${brouillon}`)
+        .row()
+        .text('Annuler', 'ann:non'),
+    }
+  );
+});
+
+bot.callbackQuery(/^ann:(\d+)$/, async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.answerCallbackQuery({ text: "Réservé à l'administrateur.", show_alert: true });
+  }
+
+  const brouillon = enAttente.prendre(ctx.match[1]);
+  if (!brouillon) {
+    await ctx.answerCallbackQuery({ text: 'Cette annonce a expiré.', show_alert: true });
+    return void (await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {}));
+  }
+
+  try {
+    // Deux publics : le registre du bot, qui englobe ceux qui n'ont jamais
+    // rien acheté, et un canal d'alertes, qui ne vise que des clients.
+    const versTous = brouillon.canal === 'registre';
+    const cibles = versTous
+      ? await destinatairesDuRegistre()
+      : await destinatairesDuCanal(await destinataires({ minCommandes: 1 }), brouillon.canal);
+
+    if (!cibles.length) {
+      return ctx.answerCallbackQuery({ text: 'Plus personne à prévenir.', show_alert: true });
+    }
+
+    const envoi = await reserverEnvoi({ texte: brouillon.texte, cibles: cibles.length, force: true });
+    await ctx.answerCallbackQuery({ text: `📣 Envoi à ${cibles.length} personne(s)…` });
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+
+    // On rend la main tout de suite : trois cents messages prennent une minute,
+    // et personne ne doit rester devant un bouton grisé pendant ce temps.
+    diffuser(envoi, cibles)
+      .then(({ recus, echecs }) =>
+        bot.api.sendMessage(
+          adminAPrevenir(),
+          `📣 Annonce partie : ${recus} reçu${recus > 1 ? 's' : ''}` +
+            (echecs ? `, ${echecs} échec${echecs > 1 ? 's' : ''}` : '') + '.' +
+            // Un échec sur ce canal est presque toujours quelqu'un qui a
+            // supprimé la conversation : le dire évite de chercher une panne.
+            (echecs ? '\nUn échec, c\'est le plus souvent une conversation supprimée.' : '')
+        )
+      )
+      .catch((err) => console.error('Diffusion impossible :', err.message));
+  } catch (err) {
+    await ctx.answerCallbackQuery({ text: err.message?.slice(0, 180) ?? 'Raté.', show_alert: true });
+  }
+});
+
+/**
+ * « J'ai écrit au bot de secours », touché hors du péage.
+ *
+ * Le péage attrape ce bouton lui-même, mais seulement pour ceux qu'il
+ * retient. Le vendeur et les anciens clients reçoivent la même proposition
+ * après l'accueil, sans être retenus : leur appui arrive donc jusqu'ici, et
+ * sans ce gestionnaire il ne se passait rien — un bouton qui tourne dans le
+ * vide passe pour cassé, et on le touche trois fois.
+ */
+bot.callbackQuery('sec:fait', async (ctx) => {
+  if (await estInscritAuSecours(ctx.from.id)) {
+    await ctx.answerCallbackQuery('✅').catch(() => {});
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+    return ctx.reply(
+      "✅ C'est bon, je t'ai vu chez le bot de secours. Tu es joignable là-bas " +
+        'si cette conversation venait à disparaître.'
+    );
+  }
+  await ctx.answerCallbackQuery("Je ne t'ai pas encore vu là-bas.").catch(() => {});
+  const lien = await lienDuSecours().catch(() => '');
+  return ctx.reply(
+    "⏳ Je ne t'ai pas encore vu chez le bot de secours.\n\n" +
+      'Touche le bouton du haut, envoie-lui /start, puis reviens.',
+    lien ? { reply_markup: clavierDuSecours(lien) } : undefined
+  );
+});
+
+bot.callbackQuery('ann:non', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Rien envoyé.' });
+  await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+});
+
+// Réception de sendData. La Mini App ne s'en sert pas : elle enregistre la
+// commande par l'API, et quand le serveur est injoignable elle emmène le client
+// dans la conversation du vendeur (sendData n'est disponible que si la Mini App
+// a été ouverte depuis un bouton de clavier, ce qui n'est pas notre cas).
+// Le gestionnaire reste : sans lui, une charge utile reçue d'une version
+// antérieure de l'app tomberait dans le message d'aide générique.
+bot.on('message:web_app_data', async (ctx) => {
+  try {
+    const payload = JSON.parse(ctx.message.web_app_data.data);
+    await ctx.reply(
+      `✅ Commande *${escapeMarkdown(payload.reference ?? '')}* bien reçue, ` +
+        'on te répond très vite\\.',
+      { parse_mode: 'MarkdownV2' }
+    );
+  } catch {
+    await ctx.reply('Commande reçue, on revient vers toi rapidement.');
+  }
+});
+
+/**
+ * Tout le reste : le relais entre le client et le vendeur.
+ *
+ * Ce gestionnaire est déclaré après les commandes, qui gardent donc la
+ * priorité. Deux sens y passent :
+ *
+ * - un client écrit au bot → le message arrive au vendeur, avec de quoi
+ *   répondre. Avant, le bot récitait sa liste de commandes et la question du
+ *   client se perdait : il n'y avait aucun chemin vers le vendeur pour qui
+ *   n'avait pas de pseudo à contacter.
+ * - le vendeur répond au message relayé → la réponse repart au client. Le
+ *   routage tient dans la ligne « id » du message relayé, donc rien n'est
+ *   gardé en mémoire : un redémarrage ne casse pas une conversation en cours.
+ */
+bot.on('message:text', async (ctx) => {
+  // Le vendeur qui répond à un message relayé parle au client, pas au bot.
+  const patron = await isAdmin(ctx.from.id);
+  const cible = patron ? idDuRelais(ctx.message.reply_to_message?.text) : null;
+  if (cible) {
+    try {
+      await ecrireAuClient(cible, ctx.message.text);
+      await ctx.reply('✅ Envoyé.');
+    } catch (err) {
+      await ctx.reply(`⚠️ ${refusDeTelegram(err)}`);
+    }
+    return;
+  }
+
+  // Une commande inconnue n'est pas un message pour le vendeur.
+  //
+  // Depuis que `/aide` n'existe plus, c'est ici que tombe qui la tape encore —
+  // et aussi qui essaie `/annonce` ou `/promo` pour voir. Relayer tout cela
+  // faisait arriver « /aide » dans la conversation du vendeur, à côté des
+  // vraies questions de clients, et le poussait à répondre à un robot.
+  const commande = /^\/[A-Za-z0-9_]+/.test(ctx.message.text.trim());
+  if (commande && !patron) {
+    return ctx.reply(
+      "Je ne connais pas cette commande. Tout se passe dans la boutique 👇",
+      { reply_markup: shopKeyboard() }
+    );
+  }
+
+  // Un administrateur qui écrit au bot sans répondre à personne cherche ses
+  // commandes : lui relayer son propre message à lui-même n'aiderait personne.
+  const refus = patron ? null : await relayerAuVendeur(ctx);
+
+  await ctx.reply(
+    patron
+      ? 'Je ne comprends que quelques commandes :\n' +
+          '/boutique — ouvrir le catalogue\n' +
+          '/commandes — retrouver tes commandes\n' +
+          '/admin — la gestion, et la liste de tes commandes'
+      : refus ?? 'Message transmis à la boutique, on te répond ici.',
+    { reply_markup: config.webappUrl ? shopKeyboard() : undefined }
+  );
+});
+
+/**
+ * Ce qu'une personne peut faire arriver dans le téléphone du vendeur.
+ *
+ * Huit messages par quart d'heure : largement de quoi poser une question, en
+ * préciser deux et remercier. Au-delà, ce n'est plus une conversation. Sans
+ * cette borne, cent messages arrivaient en dix-huit millisecondes — mesuré —
+ * et le vendeur n'avait aucun moyen d'y couper court, puisque bloquer le bot
+ * l'aurait coupé de toute sa boutique.
+ */
+const cadenceDuRelais = creerCadence({ max: 8, fenetreMs: 15 * 60 * 1000, nom: 'relais' });
+
+/**
+ * Porte le message d'un client au vendeur.
+ *
+ * Deux refus avant d'y arriver, et ce sont eux qui comptent :
+ *
+ * - **un compte bloqué ne passe pas.** Bloquer quelqu'un doit le bloquer pour
+ *   de bon ; le laisser continuer d'écrire faisait de cette fonctionnalité un
+ *   bouton décoratif, et du bot un canal de harcèlement vers le téléphone du
+ *   vendeur ;
+ * - **une cadence**, parce qu'un compte parfaitement légitime peut noyer une
+ *   conversation aussi sûrement qu'un compte bloqué.
+ *
+ * Rend un texte à dire au client, ou `null` quand c'est passé — le silence
+ * serait pris pour une panne, et il réécrirait.
+ */
+async function relayerAuVendeur(ctx) {
+  const settings = await getSettings();
+  if (isBlocked(settings, ctx.from.id)) {
+    // On ne dit pas « tu es bloqué » : ça n'apporte rien et ça relance. Le
+    // message est simplement reçu et ne va nulle part.
+    return 'Message bien reçu.';
+  }
+
+  const cadence = cadenceDuRelais.passer(ctx.from.id);
+  if (!cadence.ok) {
+    return 'Tu as déjà écrit plusieurs fois — on te répond dès que possible. ' +
+      `Réessaie dans ${attenteEnClair(cadence.attente)}.`;
+  }
+
+  if (!adminAPrevenir()) {
+    console.warn('ADMIN_CHAT_ID absent : message client reçu, personne à prévenir.');
+    return null;
+  }
+
+  try {
+    await bot.api.sendMessage(adminAPrevenir(), messageRelaye(ctx.from, ctx.message.text));
+  } catch (err) {
+    console.error('Relais du message client impossible :', err.message);
+  }
+  return null;
+}
+
+/**
+ * Écrit à un client par son identifiant numérique.
+ *
+ * C'est la seule façon de joindre quelqu'un qui n'a pas de pseudo : depuis un
+ * compte personnel, un identifiant ne se contacte pas. Le bot, lui, a déjà une
+ * conversation ouverte avec ce client — c'est d'elle que vient l'identifiant.
+ *
+ * L'en-tête nomme la boutique : un message nu, arrivant d'un bot dans lequel on
+ * a commandé une fois il y a trois mois, ressemble à un robot qui s'égare.
+ */
+export async function ecrireAuClient(userId, texte) {
+  const message = await bot.api.sendMessage(
+    Number(userId),
+    messagePourLeClient(texte, config.shopName),
+    { reply_markup: config.webappUrl ? shopKeyboard() : undefined },
+    AbortSignal.timeout(DELAI_ENVOI)
+  );
+  return { messageId: message.message_id };
+}
+
+bot.catch((err) => {
+  console.error('Erreur bot :', err.error ?? err);
+});
+
+/**
+ * Confirme au client que sa commande est bien partie.
+ *
+ * C'est son accusé de réception, et il compte : la Mini App n'ouvre plus la
+ * conversation du vendeur avec un récapitulatif à envoyer, donc ce message est
+ * la seule trace de la commande qui lui reste dans Telegram.
+ */
+export async function notifyOrderPlaced(order) {
+  const items = order.items
+    .map((i) => `• ${i.quantity} × ${i.name}${i.variantLabel ? ` (${i.variantLabel})` : ''}`)
+    .join('\n');
+
+  const remise = order.discount
+    ? `Remise${order.discountLabel ? ` ${order.discountLabel}` : ''} : −${formatPrice(order.discount)}\n`
+    : '';
+
+  const text =
+    `✅ Commande ${order.reference} enregistrée\n\n` +
+    `${items}\n\n` +
+    (order.slot ? `🕒 ${order.slot.label}\n` : '') +
+    remise +
+    `Total : ${formatPrice(order.total)}\n\n` +
+    'On revient vers toi très vite.';
+
+  await bot.api.sendMessage(order.user.id, text, {
+    reply_markup: config.webappUrl ? shopKeyboard() : undefined,
+  });
+}
+
+/**
+ * Envoie un fichier à l'administrateur, dans la conversation du bot.
+ *
+ * Un téléchargement lancé depuis la Mini App est capricieux : la WebView de
+ * Telegram bloque souvent les liens de téléchargement, et le fichier n'arrive
+ * nulle part. Passer par le bot le dépose dans la conversation, où il se
+ * consulte, se transfère et se retrouve des mois plus tard.
+ */
+export async function sendFileToAdmin(chatId, filename, contenu, legende) {
+  const donnees = Buffer.isBuffer(contenu) ? contenu : Buffer.from(contenu, 'utf8');
+  await bot.api.sendDocument(
+    chatId,
+    new InputFile(donnees, filename),
+    { caption: legende?.slice(0, 1000) },
+    // grammY attend 500 secondes par défaut — il le faut pour le long polling,
+    // qui tient la connexion ouverte exprès. Mais cet envoi-ci répond à une
+    // requête HTTP : quelqu'un attend devant son écran. Sans cette borne, un
+    // réseau coupé laissait l'admin sur un bouton grisé pendant huit minutes,
+    // sans un mot.
+    AbortSignal.timeout(DELAI_ENVOI),
+  );
+  return { filename, octets: donnees.length };
+}
+
+/** Au-delà, on rend la main : personne n'attend deux fois ça devant un écran. */
+const DELAI_ENVOI = 25000;
+
+/**
+ * Ce que Telegram accepte, et ce qu'il rend ensuite.
+ *
+ * Deux plafonds différents, et c'est le second qui commande. Un bot peut
+ * *envoyer* une vidéo de cinquante mégaoctets, mais ne peut en *télécharger*
+ * que vingt : au-delà, le média serait accepté, rangé dans la galerie, et
+ * resterait noir à l'affichage. On s'aligne donc sur ce qu'on saura resservir.
+ */
+export const POIDS_MAX = {
+  photo: 10 * 1024 * 1024,
+  video: 20 * 1024 * 1024,
+  // Un GIF part par la porte des animations, qui a les mêmes plafonds qu'une
+  // vidéo — c'en est une, une fois que Telegram l'a converti.
+  gif: 20 * 1024 * 1024,
+};
+
+/**
+ * Dépose un fichier chez Telegram et rend sa référence.
+ *
+ * Le fichier ne touche jamais notre disque : il traverse le serveur et repart
+ * vers la conversation du vendeur, d'où on ne garde que le `file_id`. Rien à
+ * écrire (donc rien qui casse en serverless), rien de plus à sauvegarder, et
+ * le vendeur récupère au passage une copie dans son fil — pratique le jour où
+ * il cherche la photo d'origine.
+ *
+ * Une vidéo revient avec la vignette que Telegram a fabriquée pour elle : elle
+ * servira de `poster` dans la boutique, et c'est ce qui s'affiche tout de suite
+ * là où la vidéo se fait attendre.
+ *
+ * @returns {Promise<{kind: 'photo'|'video'|'gif'|'audio', fileId: string, thumbFileId?: string, titre?: string, duree?: number}>}
+ */
+export async function deposerMedia(chatId, kind, octets, nomFichier, legende) {
+  const fichier = new InputFile(octets, nomFichier);
+  const options = { caption: legende?.slice(0, 1000) };
+
+  if (kind === 'video') {
+    const message = await bot.api.sendVideo(chatId, fichier, options, AbortSignal.timeout(DELAI_ENVOI));
+    return {
+      kind: 'video',
+      fileId: message.video.file_id,
+      thumbFileId: vignetteDe(message.video),
+    };
+  }
+
+  // Un GIF envoyé par `sendPhoto` revient aplati : Telegram n'en garde qu'une
+  // image fixe, et le vendeur qui avait choisi une image animée recevait une
+  // image morte sans qu'on lui dise pourquoi. `sendAnimation` est la porte
+  // prévue pour ça — elle rend un MP4 muet et bouclé, c'est-à-dire ce qu'un
+  // GIF est vraiment une fois affiché.
+  if (kind === 'gif') {
+    const message = await bot.api.sendAnimation(chatId, fichier, options, AbortSignal.timeout(DELAI_ENVOI));
+    // Selon ce que Telegram a reconnu, l'animation revient sous `animation`
+    // ou sous `document` : les deux portent le `file_id` qui nous intéresse.
+    const anime = message.animation ?? message.document;
+    return { kind: 'gif', fileId: anime.file_id, thumbFileId: vignetteDe(anime) };
+  }
+
+  // Un morceau passe par `sendAudio` et non par `sendDocument` : Telegram en
+  // lit alors les étiquettes et nous rend le titre, l'interprète et la durée.
+  // Envoyé comme document, le même fichier revient sans rien de tout ça, et
+  // le vendeur devrait retaper à la main ce qui est déjà écrit dedans.
+  if (kind === 'audio') {
+    const message = await bot.api.sendAudio(chatId, fichier, options, AbortSignal.timeout(DELAI_ENVOI));
+    const piste = message.audio ?? message.document;
+    return {
+      kind: 'audio',
+      fileId: piste.file_id,
+      // `title` et `performer` viennent des étiquettes du fichier : absents
+      // sur un enregistrement fait maison, et c'est le nom du fichier qui
+      // prend le relais plus haut.
+      titre: piste.title ? [piste.performer, piste.title].filter(Boolean).join(' — ') : null,
+      duree: Number.isFinite(piste.duration) ? piste.duration : null,
+    };
+  }
+
+  const message = await bot.api.sendPhoto(chatId, fichier, options, AbortSignal.timeout(DELAI_ENVOI));
+  // Telegram range les tailles de la plus petite à la plus grande : la
+  // dernière est celle qu'on veut afficher.
+  return { kind: 'photo', fileId: message.photo.at(-1).file_id };
+}
+
+/**
+ * La fiche publique d'un client, telle que Telegram la donne.
+ *
+ * À la demande du vendeur, jamais en masse : c'est un aller-retour par client,
+ * et une fiche produit n'a pas besoin de la biographie de qui la lit. Telegram
+ * ne répond que pour quelqu'un qui a déjà parlé au bot — c'est sa règle, et
+ * elle nous convient : on ne va pas chercher des inconnus.
+ */
+export async function ficheTelegram(userId) {
+  const chat = await bot.api.getChat(Number(userId), AbortSignal.timeout(DELAI_ENVOI));
+  return {
+    id: chat.id,
+    prenom: chat.first_name ?? null,
+    nom: chat.last_name ?? null,
+    username: chat.username ?? null,
+    bio: chat.bio ?? null,
+    // La photo de profil est une référence, comme les médias produits : on ne
+    // la recopie pas, on la sert au besoin.
+    photo: chat.photo?.small_file_id ?? null,
+    // La date de naissance, quand le client l'a renseignée sur son profil. Pour
+    // une boutique qui doit vérifier l'âge, c'est un indice de plus — jamais une
+    // preuve : Telegram ne contrôle rien, n'importe qui peut écrire 1990.
+    naissance: chat.birthdate
+      ? { jour: chat.birthdate.day, mois: chat.birthdate.month, annee: chat.birthdate.year ?? null }
+      : null,
+    // Les autres pseudos du compte : un client qui écrit depuis @lea_pro quand
+    // la commande dit @lea_2026 n'est pas forcément quelqu'un d'autre.
+    pseudos: (chat.active_usernames ?? []).filter((u) => u !== chat.username),
+    // Vrai quand ce compte interdit qu'on retrouve son profil depuis un message
+    // transféré : bon à savoir avant de chercher à le joindre autrement.
+    prive: Boolean(chat.has_private_forwards),
+  };
+}
+
+/**
+ * Retrouve après coup la vignette d'une vidéo déjà déposée.
+ *
+ * `getFile` ne la donne pas : la vignette n'apparaît que dans le message qui
+ * porte la vidéo. On renvoie donc la vidéo au vendeur — par sa référence, donc
+ * sans retéléverser un octet —, on lit la vignette au passage, et on efface le
+ * message aussitôt. Sans notification : ce n'est pas un envoi qui le concerne,
+ * et il ne doit pas faire sonner son téléphone.
+ *
+ * Sert aux vidéos ajoutées avant que la boutique ne pense à garder la
+ * vignette. Une vidéo envoyée aujourd'hui l'apporte avec elle.
+ */
+export async function retrouverVignette(chatId, fileId) {
+  const message = await bot.api.sendVideo(
+    chatId,
+    fileId,
+    { disable_notification: true },
+    AbortSignal.timeout(DELAI_ENVOI)
+  );
+  const vignette = vignetteDe(message.video);
+  // L'effacement est un confort, pas une garantie : au-delà de 48 h Telegram
+  // le refuse, et ce n'est pas une raison pour perdre la vignette trouvée.
+  await bot.api.deleteMessage(chatId, message.message_id).catch(() => {});
+  return vignette;
+}
+
+/**
+ * Envoie une annonce, doucement.
+ *
+ * Telegram coupe au-delà d'une trentaine de messages par seconde et bloque le
+ * bot qui insiste. On envoie donc par petits paquets, avec une pause entre
+ * chacun : mille clients prennent une minute, ce qui n'a aucune importance
+ * pour une annonce, et le bot reste en vie.
+ *
+ * Un client qui a bloqué le bot fait échouer son envoi sans que le reste en
+ * souffre — et il est désabonné au passage, puisqu'il a dit non à sa manière.
+ */
+export async function diffuser(envoi, clients, { paquet = 20, pause = 1200 } = {}) {
+  let recus = 0;
+  let echecs = 0;
+
+  // Le texte du vendeur, et rien d'autre.
+  //
+  // Le bot ajoutait un pied de page : un filet de séparation, la raison pour
+  // laquelle on reçoit ce message, et « Écris /stop pour ne plus en
+  // recevoir ». Le vendeur écrit ses annonces au mot près et veut qu'elles
+  // partent telles quelles.
+  //
+  // `/stop` MARCHE TOUJOURS — la commande n'a pas bougé, et le bouton de
+  // désabonnement reste dans le profil de la boutique. C'est sa mention
+  // automatique qui s'en va, pas la sortie. Un client qui ne la trouve pas
+  // bloque le bot à la place, et un blocage est définitif et silencieux :
+  // c'est au vendeur de garder une porte de sortie lisible dans ses propres
+  // mots.
+  const texte = envoi.texte;
+
+  for (let i = 0; i < clients.length; i += paquet) {
+    const tranche = clients.slice(i, i + paquet);
+    const resultats = await Promise.allSettled(
+      tranche.map((c) =>
+        bot.api.sendMessage(c.id, texte, {
+          reply_markup: config.webappUrl ? shopKeyboard() : undefined,
+        })
+      )
+    );
+
+    for (const [index, r] of resultats.entries()) {
+      if (r.status === 'fulfilled') {
+        recus++;
+        continue;
+      }
+      echecs++;
+      // 403 : le client a bloqué le bot ou supprimé la conversation. Insister
+      // à chaque annonce ne servirait qu'à refaire échouer les prochaines.
+      if (r.reason?.error_code === 403) {
+        await desabonner(tranche[index].id).catch(() => {});
+      }
+    }
+
+    if (i + paquet < clients.length) await new Promise((r) => setTimeout(r, pause));
+  }
+
+  await consignerResultat(envoi.id, { recus, echecs }).catch(() => {});
+  return { recus, echecs };
+}
+
+/**
+ * Le nom du bot, demandé une fois puis gardé.
+ *
+ * Il sert à fabriquer les liens `t.me` qui ouvrent la Mini App sur un produit.
+ * `BOT_USERNAME` court-circuite l'appel réseau ; sinon on interroge Telegram,
+ * et on garde la réponse — le nom d'un bot ne change pas en cours de route.
+ */
+let nomDuBot = config.botUsername || null;
+
+export async function botUsername() {
+  if (nomDuBot) return nomDuBot;
+  try {
+    nomDuBot = (await bot.api.getMe()).username ?? null;
+  } catch (err) {
+    // Jeton absent ou Telegram injoignable : on rend la main sans nom plutôt
+    // que de faire tomber la requête. L'appelant sait quoi en dire.
+    console.error('Nom du bot indisponible :', err.message);
+    return null;
+  }
+  return nomDuBot;
+}
+
+/** Récapitulatif d'une commande, tel que le vendeur le lit dans Telegram. */
+export function orderMessage(order) {
+  const status = STATUSES[order.status];
+  const who = order.user.username ? `@${order.user.username}` : order.user.firstName ?? 'client';
+  const items = order.items
+    .map((i) => `• ${i.quantity} × ${i.name}${i.variantLabel ? ` (${i.variantLabel})` : ''}`)
+    .join('\n');
+
+  const livraison = order.mode === 'delivery';
+  const frais = order.deliveryFee
+    ? `Livraison : ${formatPrice(order.deliveryFee)}\n`
+    : livraison
+      ? 'Livraison : offerte\n'
+      : '';
+
+  // Le vendeur doit pouvoir refaire le calcul de tête : sous-total, remise,
+  // frais, total. Sans la ligne de remise, un total plus bas que la somme des
+  // articles ressemble à un bug.
+  const remise = order.discount
+    ? `Sous-total : ${formatPrice(order.subtotal)}\n` +
+      `Remise ${order.promoCode ? `${order.promoCode} ` : ''}: −${formatPrice(order.discount)}` +
+      `${order.discountLabel ? ` (${order.discountLabel})` : ''}\n`
+    : '';
+
+  // Le créneau vaut mieux en tête qu'en bas : c'est ce qui décide de l'ordre
+  // dans lequel le vendeur prépare ses commandes.
+  const creneau = order.slot ? `🕒 ${order.slot.label}\n` : '';
+  const secteur = order.zone ? ` — ${order.zone.name} (${order.zone.postalCode})` : '';
+
+  return (
+    `🧾 COMMANDE ${order.reference} — ${status?.emoji ?? ''} ${status?.label ?? order.status}\n\n` +
+    `Client : ${who} (id ${order.user.id})\n` +
+    `Mode : ${livraison ? '🛵 livraison' : '🏠 retrait'}${secteur}\n` +
+    creneau +
+    `${items}\n\n` +
+    remise +
+    frais +
+    `Total : ${formatPrice(order.total)}\n` +
+    adresseDuMessage(order) +
+    (order.note ? `Note : ${order.note}` : '')
+  );
+}
+
+/**
+ * Boutons de traitement rapide sous la commande : seules les transitions
+ * autorisées depuis le statut courant sont proposées, si bien qu'un appui
+ * ne peut pas produire un enchaînement interdit. Rien quand la commande est
+ * terminée — le clavier disparaît alors de lui-même.
+ */
+/**
+ * Où livrer, écrit pour être lu et recopié.
+ *
+ * L'adresse sur sa propre ligne, le complément sous elle, la ville en
+ * dessous : c'est la forme d'une enveloppe, et c'est celle qu'on relit d'un
+ * coup d'œil au moment de partir. Les commandes d'avant ne portent qu'une
+ * ligne de contact — on la garde telle quelle.
+ */
+function adresseDuMessage(order) {
+  const livraison = order.mode === 'delivery';
+  if (livraison && order.address?.street) {
+    return (
+      `📍 ${adresseEnClair(order.address, '\n     ')}\n` +
+      (order.phone ? `📞 ${order.phone}\n` : '')
+    );
+  }
+  return order.contact ? `${livraison ? 'Adresse' : 'Contact'} : ${order.contact}\n` : '';
+}
+
+/**
+ * Les boutons d'une commande : le statut suivant, et par où y aller.
+ *
+ * Les trois applications de trajet valent mieux qu'une seule : Waze est le
+ * réflexe de beaucoup de livreurs, Plans s'ouvre tout seul sur un iPhone, et
+ * Maps reste le repli qui marche partout. Recopier une adresse à la main dans
+ * une application, une par commande, c'est la faute de frappe assurée.
+ */
+export function statusKeyboard(order) {
+  const next = STATUSES[order.status]?.next ?? [];
+  const route = order.mode === 'delivery' ? liensItineraire(order.address) : null;
+  if (!next.length && !route) return undefined;
+
+  const keyboard = new InlineKeyboard();
+  for (const status of next) {
+    keyboard.text(
+      `${STATUSES[status].emoji} ${STATUSES[status].label}`,
+      `st:${order.reference}:${status}`
+    );
+  }
+  if (route) {
+    if (next.length) keyboard.row();
+    keyboard.url('🗺 Maps', route.maps).url('🚗 Waze', route.waze).url('🧭 Plans', route.plans);
+  }
+  return keyboard;
+}
+
+/**
+ * Traitement d'une commande depuis la conversation : le vendeur n'a pas à
+ * ouvrir l'espace admin pour confirmer ou marquer une commande prête.
+ */
+bot.callbackQuery(/^st:([A-Za-z0-9-]+):([a-z]+)$/, async (ctx) => {
+  if (!(await isAdmin(ctx.from.id))) {
+    return ctx.answerCallbackQuery({
+      text: "Réservé à l'administrateur.",
+      show_alert: true,
+    });
+  }
+
+  const [, reference, next] = ctx.match;
+  try {
+    const { order, changed } = await setStatus(reference, next);
+
+    // Une annulation remet les articles en rayon, comme dans l'espace admin.
+    if (changed && next === 'annulee') await restoreStock(order.items);
+    if (changed && (await getSettings()).features.clientNotifications) {
+      notifyCustomer(order).catch((err) =>
+        console.error('Notification client impossible :', err.message)
+      );
+    }
+
+    await ctx.answerCallbackQuery({
+      text: changed ? `${reference} → ${STATUSES[next].label}` : 'Déjà à ce statut.',
+    });
+    await ctx.editMessageText(orderMessage(order), { reply_markup: statusKeyboard(order) });
+  } catch (err) {
+    await ctx.answerCallbackQuery({ text: err.message, show_alert: true });
+  }
+});
+
+/** Prévient le vendeur qu'une commande vient d'être enregistrée. */
+export async function notifyAdmin(order) {
+  if (!adminAPrevenir()) return;
+  try {
+    await bot.api.sendMessage(adminAPrevenir(), orderMessage(order), {
+      reply_markup: statusKeyboard(order),
+    });
+  } catch (err) {
+    console.error('Notification admin impossible :', err.message);
+  }
+}
+
+/** Prévient le vendeur que des articles passent sous son seuil d'alerte. */
+export async function notifyLowStock(entries) {
+  if (!adminAPrevenir() || !entries.length) return;
+
+  const lignes = entries
+    .map((e) => `• ${e.name}${e.variantLabel ? ` (${e.variantLabel})` : ''} — ${e.left === 0 ? 'épuisé' : `reste ${e.left}`}`)
+    .join('\n');
+
+  try {
+    await bot.api.sendMessage(adminAPrevenir(), `⚠️ Stock bas\n\n${lignes}`);
+  } catch (err) {
+    console.error('Alerte de stock impossible :', err.message);
+  }
+}
+
+/** Prévient un client qu'un article qu'il attendait est revenu. */
+export async function notifyBackInStock(userId, product, variantLabel) {
+  const quoi = `${product.name}${variantLabel ? ` (${variantLabel})` : ''}`;
+  try {
+    await bot.api.sendMessage(
+      Number(userId),
+      `🔔 ${quoi} est de retour en stock !`,
+      { reply_markup: config.webappUrl ? shopKeyboard() : undefined }
+    );
+  } catch (err) {
+    // Un client qui a bloqué le bot ne doit pas faire échouer le réassort.
+    console.warn(`Alerte de retour impossible pour ${userId} :`, err.message);
+  }
+}
+
+/** Prévient le client que le statut de sa commande a changé. */
+export async function notifyCustomer(order) {
+  const status = STATUSES[order.status];
+  if (!status) return;
+
+  const messages = {
+    confirmee: 'On a bien reçu ta commande, elle est confirmée.',
+    prete: 'Ta commande est prête !',
+    livree: 'Commande livrée. Merci et à bientôt 👋',
+    annulee: 'Ta commande a été annulée. Écris-nous si c\'est une erreur.',
+  };
+
+  const livree = order.status === 'livree';
+  const text =
+    `${status.emoji} Commande ${order.reference} — ${status.label}\n\n` +
+    `${messages[order.status] ?? ''}\n` +
+    `Total : ${formatPrice(order.total)}` +
+    (livree ? '\n\nComment c\'était ? Touche une étoile, ça prend une seconde.' : '');
+
+  await bot.api.sendMessage(order.user.id, text, {
+    reply_markup: livree ? clavierDEtoiles(order.reference) : undefined,
+  });
+}
+
+/**
+ * Cinq étoiles, sur une ligne, dans la conversation.
+ *
+ * C'est le moment où l'avis se donne ou ne se donnera jamais : le client vient
+ * de recevoir sa commande et il a son téléphone en main. Lui demander d'ouvrir
+ * l'application, de retrouver le produit et d'écrire un paragraphe, c'est
+ * n'avoir aucun avis. Un doigt sur une étoile, c'est un avis.
+ */
+function clavierDEtoiles(reference) {
+  const clavier = new InlineKeyboard();
+  for (let note = 1; note <= 5; note += 1) {
+    clavier.text('⭐'.repeat(note), `av:${reference}:${note}`);
+    if (note < 5) clavier.row();
+  }
+  return clavier;
+}
+
+/**
+ * L'étoile touchée devient l'avis, sur tous les articles de la commande.
+ *
+ * Demander quelle ligne il note serait plus juste et ne donnerait plus aucun
+ * avis : on note ce qu'on a reçu, et ce qu'il a reçu est cette commande. Le mot
+ * écrit, lui, s'ajoute ensuite depuis la boutique — l'avis y est rouvert sur ce
+ * qu'il vient de mettre.
+ */
+bot.callbackQuery(/^av:([A-Za-z0-9-]+):([1-5])$/, async (ctx) => {
+  const [, reference, note] = ctx.match;
+  try {
+    if (!(await getSettings()).features.avis) {
+      return ctx.answerCallbackQuery({ text: 'Les avis sont fermés.', show_alert: true });
+    }
+
+    const order = (await listOrders({ userId: ctx.from.id, limit: 50 }))
+      .find((o) => o.reference === reference);
+    if (!order) {
+      return ctx.answerCallbackQuery({ text: 'Commande introuvable.', show_alert: true });
+    }
+
+    const refus = refusDAvis(order);
+    if (refus) return ctx.answerCallbackQuery({ text: refus, show_alert: true });
+
+    const notes = Object.fromEntries((order.items ?? []).map((i) => [i.id, Number(note)]));
+    // Anonyme par défaut, et c'est délibéré : on ne lui a pas demandé s'il
+    // voulait voir son prénom sous une note publique, donc on ne l'y met pas.
+    // Dans la boutique, où l'écran pose la question, il peut signer.
+    const deposes = await deposerAvis({ order, notes, texte: '', anonyme: true, user: ctx.from });
+
+    await ctx.answerCallbackQuery({ text: `${'⭐'.repeat(Number(note))} Merci !` });
+    // Le clavier disparaît : le laisser inviterait à re-noter sans que rien ne
+    // dise que la note d'avant a été remplacée.
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+    await ctx.reply(
+      `Merci pour tes ${'⭐'.repeat(Number(note))} !\n\n` +
+        'Tu peux ajouter un mot depuis la boutique, ça aide ceux qui hésitent.',
+      { reply_markup: shopKeyboard() }
+    );
+
+    notifyNouvelAvis(order, deposes).catch(() => {});
+  } catch (err) {
+    await ctx.answerCallbackQuery({ text: err.message?.slice(0, 180) ?? 'Raté.', show_alert: true });
+  }
+});
+
+/**
+ * Prévient le vendeur qu'un avis vient d'être donné.
+ *
+ * Une mauvaise note est ce qu'une boutique a de plus utile, à condition de la
+ * lire le jour même : au bout d'une semaine, le client est parti et le problème
+ * est devenu une habitude.
+ */
+export async function notifyNouvelAvis(order, avis) {
+  if (!adminAPrevenir() || !avis?.length) return;
+
+  const note = avis[0].note;
+  const qui = order.user?.username ? `@${order.user.username}` : order.user?.firstName ?? 'Un client';
+  const articles = [...new Set(avis.map((a) => a.productId))].join(', ');
+
+  try {
+    await bot.api.sendMessage(
+      adminAPrevenir(),
+      `${'⭐'.repeat(note)}${'☆'.repeat(5 - note)}  ${note}/5\n\n` +
+        `${qui} · commande ${order.reference}\n` +
+        `${articles}\n` +
+        (avis[0].texte ? `\n« ${avis[0].texte} »\n` : '') +
+        (note <= 2 ? '\n⚠️ Une note basse se rattrape le jour même.' : '')
+    );
+  } catch (err) {
+    console.error('Notification d\'avis impossible :', err.message);
+  }
+}
+
+function formatPrice(cents) {
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: config.currency }).format(
+    cents / 100
+  );
+}
+
+/** Échappe les caractères réservés de MarkdownV2. */
+function escapeMarkdown(text) {
+  return String(text).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+}

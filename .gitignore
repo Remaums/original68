@@ -1,0 +1,27 @@
+node_modules/
+.env
+*.log
+server/data/orders.json
+server/data/catalog.json
+server/data/settings.json
+server/data/verifications.json
+server/data/waitlist.json
+server/data/promos.json
+server/data/annonces.json
+server/data/entretien.json
+server/data/.lock
+# Écriture atomique interrompue : le magasin écrit un .tmp puis le renomme.
+server/data/*.tmp
+server/data/media-cache/
+server/data/captcha-bot.json
+server/data/users.json
+server/data/avis.json
+server/data/admins.json
+server/data/preferences.json
+# Le registre du bot de secours : qui peut être joint par lui, et la
+# dernière santé connue de chaque porte. Données de boutique, pas du code.
+server/data/secours.json
+# La langue choisie par chaque client — partagée entre le bot et la
+# boutique. Réglage de client, pas du code.
+server/data/langue.json
+server/data/favoris.json

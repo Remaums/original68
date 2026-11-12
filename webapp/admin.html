@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Admin — Original68</title>
+<meta name="theme-color" content="#04160f">
+<!-- L'enseigne de la maison. Le PNG servi fait 192 px : le logo
+     s'affiche à 34, et même sur un écran à trois fois la densité
+     cela laisse de la marge. Le 512 est dans le dossier pour la
+     photo de profil du bot, il n'est pas chargé par la page. -->
+<link rel="icon" href="/assets/ui/logo.png">
+<link rel="apple-touch-icon" href="/assets/ui/logo.png">
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/admin.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body class="admin">
+
+<div class="a-gate" id="gate">
+  <div class="a-gate__card">
+    <div class="a-spinner" id="gateSpinner"></div>
+    <p class="a-gate__titre" id="gateTitre" hidden></p>
+    <p id="gateText">Vérification de l'accès…</p>
+    <p class="a-gate__aide" id="gateAide" hidden></p>
+  </div>
+</div>
+
+<header class="a-top">
+  <div>
+    <span class="a-top__eyebrow">Espace admin</span>
+    <h1 class="a-top__title" id="adminName">Original68</h1>
+  </div>
+  <button class="a-iconbtn" id="refreshBtn" type="button" aria-label="Rafraîchir">⟳</button>
+</header>
+
+<nav class="a-tabs" role="tablist">
+  <button class="a-tab" data-tab="board" role="tab" aria-selected="true">Tableau</button>
+  <button class="a-tab" data-tab="orders" role="tab" aria-selected="false">Commandes<span class="a-tab__dot" id="pendingDot" hidden></span></button>
+  <button class="a-tab" data-tab="clients" role="tab" aria-selected="false">Clients</button>
+  <button class="a-tab" data-tab="users" role="tab" aria-selected="false">Utilisateurs</button>
+  <button class="a-tab" data-tab="avis" role="tab" aria-selected="false">Avis<span class="a-tab__dot" id="avisDot" hidden></span></button>
+  <button class="a-tab" data-tab="stock" role="tab" aria-selected="false">Stock</button>
+  <button class="a-tab" data-tab="products" role="tab" aria-selected="false">Produits</button>
+  <button class="a-tab" data-tab="categories" role="tab" aria-selected="false">Catégories</button>
+  <button class="a-tab" data-tab="settings" role="tab" aria-selected="false">Réglages</button>
+</nav>
+
+<!-- Qui est dans la boutique en ce moment. « Actif », jamais « en ligne » :
+     Telegram ne donne pas le statut en ligne aux bots. -->
+<div class="a-presence" id="presence" hidden></div>
+
+<main class="a-main">
+
+  <!-- ══ Tableau de bord ══ ═══════════════════════════════════
+       Une seule rangée de filtres, en haut, qui commande tout ce
+       qui suit : une période par graphique donnerait quatre
+       lectures différentes du même magasin. -->
+  <section class="a-panel" id="panel-board">
+    <!-- Les deux gestes qu'on fait dans l'urgence, avant tout le reste.
+         Ils sont en tête parce qu'on ne les cherche pas : on les veut sous
+         le pouce à la seconde où l'on ouvre l'écran. -->
+    <div class="a-urgence" id="commandes">
+      <button class="a-gros a-gros--rideau" id="btnUrgence" type="button" aria-pressed="false">
+        <span class="a-gros__titre" id="btnUrgenceTitre">Urgence</span>
+        <span class="a-gros__dit" id="btnUrgenceDit">La boutique est visible</span>
+      </button>
+      <button class="a-gros a-gros--porte" id="btnOuverture" type="button" aria-pressed="true">
+        <span class="a-gros__titre" id="btnOuvertureTitre">Ouverte</span>
+        <span class="a-gros__dit" id="btnOuvertureDit">On prend les commandes</span>
+      </button>
+    </div>
+
+    <div class="a-periode" id="periode" role="group" aria-label="Période observée"></div>
+
+    <div class="a-hero" id="hero"></div>
+    <div class="a-kpis" id="kpis"></div>
+
+    <h2 class="a-h2">Ventes par jour</h2>
+    <figure class="a-viz" id="vizJours"></figure>
+
+    <h2 class="a-h2">Meilleures ventes</h2>
+    <figure class="a-viz" id="vizProduits"></figure>
+    <ul class="a-list" id="topProducts" hidden></ul>
+
+    <h2 class="a-h2">Quand on commande</h2>
+    <figure class="a-viz" id="vizHeures"></figure>
+    <figure class="a-viz" id="vizSemaine"></figure>
+
+    <h2 class="a-h2">D'où viennent les commandes</h2>
+    <figure class="a-viz" id="vizLieux"></figure>
+
+    <h2 class="a-h2">Alertes stock</h2>
+    <ul class="a-list" id="lowStock"></ul>
+  </section>
+
+  <!-- ══ Commandes ══ -->
+  <section class="a-panel" id="panel-orders" hidden>
+    <div class="a-filters" id="orderFilters"></div>
+    <div id="ordersList"></div>
+  </section>
+
+  <!-- ══ Clients ══ ═══════════════════════════════════════════
+       Aucune donnée n'est collectée pour cet écran : il regroupe
+       ce que les commandes disent déjà. -->
+  <section class="a-panel" id="panel-clients" hidden>
+    <div class="a-audience" id="audience" hidden></div>
+    <input class="a-search" id="clientSearch" type="search"
+           placeholder="Nom, pseudo, téléphone, rue, ville, référence…">
+    <p class="a-clients__compte" id="clientCount"></p>
+    <div id="clientsList"></div>
+  </section>
+
+  <!-- ══ Utilisateurs ══ ═══════════════════════════════════════
+       Tous ceux qui ont ouvert le bot, pas seulement ceux qui ont
+       commandé. Le registre note chaque passage ; on ne garde ni le
+       contenu des messages, ni rien d'autre que qui, quand, combien. -->
+  <section class="a-panel" id="panel-users" hidden>
+    <div class="a-userstat" id="userStat"></div>
+    <input class="a-search" id="userSearch" type="search"
+           placeholder="Nom, pseudo, identifiant…">
+    <p class="a-clients__compte" id="userCount"></p>
+    <div id="usersList"></div>
+  </section>
+
+  <!-- ══ Avis ══ -->
+  <section class="a-panel" id="panel-avis" hidden>
+    <div class="a-avisstat" id="avisStat"></div>
+
+    <h2 class="a-h2">Par produit</h2>
+    <div id="avisParProduit"></div>
+
+    <h2 class="a-h2">Tous les avis</h2>
+    <div class="a-filters" id="avisFiltres" role="group" aria-label="Filtrer les avis"></div>
+    <div id="avisList"></div>
+  </section>
+
+  <!-- ══ Stock ══ -->
+  <section class="a-panel" id="panel-stock" hidden>
+    <input class="a-search" id="stockSearch" type="search" placeholder="Chercher un produit…">
+    <div id="stockList"></div>
+  </section>
+
+  <!-- ══ Produits ══ -->
+  <section class="a-panel" id="panel-products" hidden>
+    <button class="a-btn a-btn--primary a-btn--block" id="newProductBtn" type="button">+ Nouveau produit</button>
+    <!-- Le classement est un mode, pas une colonne de flèches posée en
+         permanence : on ne range son catalogue qu'une fois de temps en
+         temps, et trois boutons de plus sur chaque ligne encombreraient
+         l'écran qu'on ouvre vingt fois par jour pour corriger un stock. -->
+    <div class="a-classement">
+      <button class="a-btn a-btn--ghost a-btn--block" id="classerToggle" type="button">↕ Classer les produits</button>
+      <p class="a-hint" id="classerAide" hidden>
+        L'ordre ci-dessous est celui de la boutique. Le premier est le plus en
+        avant. Les articles épuisés passent en fin de liste quoi qu'il arrive.
+      </p>
+    </div>
+    <div id="productsList"></div>
+  </section>
+
+  <!-- ══ Catégories ══ -->
+  <section class="a-panel" id="panel-categories" hidden>
+    <p class="a-hint">
+      L'ordre ci-dessous est celui des onglets de la boutique. Une catégorie qui
+      contient des produits ne peut pas être supprimée.
+    </p>
+    <div id="categoryRows"></div>
+    <button class="a-btn a-btn--ghost a-btn--block" id="addCategory" type="button">+ Ajouter une catégorie</button>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveCategories" type="button">Enregistrer les catégories</button>
+  </section>
+
+  <!-- ══ Réglages ══ -->
+  <section class="a-panel" id="panel-settings" hidden>
+    <h2 class="a-h2">Fonctionnalités</h2>
+    <p class="a-hint">
+      Tout se coupe et se rallume ici, sans redéployer. Ce qui est éteint
+      disparaît de la boutique <b>et est refusé par le serveur</b> : masquer un
+      bouton ne fermerait rien. Les réglages d'une fonctionnalité éteinte sont
+      conservés — la rallumer les retrouve intacts.
+    </p>
+    <div class="a-features" id="featureList"></div>
+
+    <!-- La playlist. Le bloc ne s'affiche que si la fonctionnalité est
+         allumée : régler une liste qui ne joue nulle part donnerait
+         l'impression qu'elle joue. -->
+    <div id="musiqueBlock" hidden>
+      <h2 class="a-h2">Musique d'ambiance</h2>
+      <p class="a-hint">
+        Les morceaux sont envoyés à ta conversation avec le bot, comme tes
+        photos : rien n'est stocké sur le serveur, seule la référence est
+        gardée. <b>L'ordre est tiré au sort à chaque visite</b> : ta liste
+        reste rangée comme tu la vois ici, mais un client qui revient trois
+        fois dans la semaine n'entend pas trois fois le même morceau
+        d'accueil.
+        <b>Le client doit appuyer sur la pastille</b> — aucun navigateur ne
+        démarre un son tout seul, et tant qu'il n'appuie pas il ne télécharge
+        rien.
+      </p>
+      <div id="musiqueListe" class="a-musique"></div>
+      <div class="a-media__envoi" id="musiqueEnvoi" hidden>
+        <div class="a-media__barre"><div id="musiqueProgres"></div></div>
+        <span id="musiqueEtat"></span>
+      </div>
+      <button class="a-btn a-btn--block" id="pickMusique" type="button">Ajouter un morceau</button>
+      <input type="file" id="fileMusique" accept="audio/*" hidden>
+      <p class="a-hint" id="musiqueCompte"></p>
+    </div>
+
+    <h2 class="a-h2">Qui la boutique prévient</h2>
+    <p class="a-hint">
+      Ces deux réglages vivaient dans le fichier <code>.env</code> du serveur :
+      les changer demandait un terminal et un redémarrage. Ils se règlent
+      maintenant ici. <b>Laisse un champ vide et le <code>.env</code>
+      reprend la main</b> — rien ne change tant que tu n'y touches pas.
+    </p>
+    <label class="a-field">
+      <span>Admin à prévenir — commandes, alertes de stock, messages des clients</span>
+      <input id="fAdminChat" maxlength="24" inputmode="text" autocomplete="off"
+             spellcheck="false" placeholder="123456789 — ou -100123456789 pour un groupe">
+    </label>
+    <p class="a-hint">
+      Ton identifiant Telegram, ou celui d'un <b>groupe</b> — commençant par
+      <code>-100</code> — si vous êtes plusieurs à traiter les commandes. Le bot
+      doit être membre du groupe, sinon il ne pourra rien y écrire. Ton
+      identifiant : envoie <code>/start</code> au bot, il te l'affiche.
+    </p>
+    <label class="a-field">
+      <span>Compte vendeur — celui que le client contacte</span>
+      <input id="fSellerUsername" maxlength="64" autocomplete="off" spellcheck="false"
+             placeholder="pseudo, @pseudo ou le lien t.me/…">
+    </label>
+
+    <button class="a-btn a-btn--primary a-btn--block" id="saveContact" type="button">Enregistrer le contact</button>
+
+    <h2 class="a-h2">Ouverture</h2>
+    <div class="a-toggle">
+      <label><input type="checkbox" id="fOpen"> Boutique ouverte</label>
+    </div>
+    <label class="a-field">
+      <span>Message affiché quand elle est fermée</span>
+      <input id="fClosedMessage" maxlength="300">
+    </label>
+    <div id="hoursBlock" hidden>
+      <label class="a-field">
+        <span>Fuseau horaire</span>
+        <input id="fTimezone" maxlength="60" placeholder="Europe/Paris">
+      </label>
+      <div id="hoursRows"></div>
+    </div>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveOpening" type="button">Enregistrer l'ouverture</button>
+
+    <div>
+    <h2 class="a-h2">Retrait et livraison</h2>
+    <div class="a-toggle">
+      <label><input type="checkbox" id="fPickup"> Retrait sur place</label>
+      <label><input type="checkbox" id="fDelivery"> Livraison</label>
+    </div>
+    <div class="a-row">
+      <label class="a-field"><span>Frais de livraison (€)</span><input id="fDeliveryFee" type="text"   inputmode="decimal"></label>
+      <label class="a-field"><span>Livraison offerte dès (€)</span><input id="fFreeFrom" type="text"   inputmode="decimal" placeholder="jamais"></label>
+    </div>
+    <label class="a-field"><span>Commande minimum (€)</span><input id="fMinimum" type="text"   inputmode="decimal"></label>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveFulfillment" type="button">Enregistrer la livraison</button>
+    </div>
+
+    <h2 class="a-h2">Vérification d'identité</h2>
+    <p class="a-hint">
+      Le client envoie sa pièce dans la conversation du bot ; tu la vois arriver
+      avec deux boutons, Valider ou Refuser. <b>Le document n'est ni téléchargé
+      ni conservé par la boutique</b> : seul le verdict est gardé. Pense à
+      supprimer le message une fois la décision prise. Se pilote aussi depuis le
+      bot : <code>/verification on</code> ou <code>off</code>.
+    </p>
+
+    <h2 class="a-h2">Alerte de stock</h2>
+    <div>
+      <p class="a-hint">
+        Ces limites gênent un robot, pas un client qui commande deux fois dans la
+        soirée. Elles s'appliquent à chaque client pris séparément.
+      </p>
+      <div class="a-row">
+        <label class="a-field">
+          <span>Commandes par heure et par client</span>
+          <input id="fOrdersPerHour" type="number" min="1" max="100" inputmode="numeric">
+        </label>
+        <label class="a-field">
+          <span>Articles par commande</span>
+          <input id="fUnitsPerOrder" type="number" min="1" max="999" inputmode="numeric">
+        </label>
+      </div>
+    </div>
+    <label class="a-field">
+      <span>Alerte quand le stock descend à</span>
+      <input id="fLowStock" type="number" min="0" max="999" inputmode="numeric">
+    </label>
+    <p class="a-hint">
+      En dessous de ce seuil, le bot te prévient dès la commande qui l'a
+      franchi. Les clients peuvent aussi demander à être prévenus du retour
+      d'un article épuisé : ils le sont automatiquement au réassort.
+    </p>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveSettings" type="button">Enregistrer l'alerte</button>
+
+    <h2 class="a-h2">Bandeau promo</h2>
+    <p class="a-hint">
+      Le bandeau en haut du catalogue, avec son bouton « Voir les offres ». Il
+      n'apparaît que si au moins un produit est en promo : la promo se règle
+      sur chaque fiche produit, champ <b>Promo (%)</b>. Titre vide : la
+      boutique écrit elle-même « PROMO FLASH — jusqu'à -40 % », d'après la
+      plus forte promo du moment.
+    </p>
+    <label><input type="checkbox" id="fPromoActif"> Afficher le bandeau</label>
+    <label class="a-field"><span>Titre (facultatif)</span>
+      <input id="fPromoTitre" maxlength="60" placeholder="PROMO FLASH — jusqu'à -40 %">
+    </label>
+    <button class="a-btn a-btn--primary a-btn--block" id="savePromoBandeau" type="button">Enregistrer le bandeau</button>
+
+    <div>
+    <h2 class="a-h2">Zones de livraison</h2>
+    <p class="a-hint">
+      Tant qu'aucune zone n'est déclarée, tu livres partout aux conditions
+      ci-dessus. Dès qu'il y en a une, <b>seuls les codes postaux listés sont
+      desservis</b> — les autres voient un refus clair au lieu d'une commande
+      que tu devras annuler. Frais, minimum et franco laissés vides retombent
+      sur les conditions générales.
+    </p>
+    <div id="zoneRows"></div>
+    <button class="a-btn a-btn--ghost a-btn--block" id="addZone" type="button">+ Ajouter une zone</button>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveZones" type="button">Enregistrer les zones</button>
+    </div>
+
+    <div>
+    <h2 class="a-h2">Créneaux</h2>
+    <p class="a-hint">
+      Le client réserve une plage, tu vois l'ordre de préparation dans la
+      commande. Chaque créneau a une capacité : une fois atteinte, il s'affiche
+      complet et le serveur refuse de le surbooker.
+    </p>
+    <div id="slotsBlock" hidden>
+      <div class="a-row">
+        <label class="a-field">
+          <span>Délai avant un créneau (min)</span>
+          <input id="fSlotLead" type="number" min="0" max="10080" inputmode="numeric">
+        </label>
+        <label class="a-field">
+          <span>Jours proposés</span>
+          <input id="fSlotDays" type="number" min="1" max="14" inputmode="numeric">
+        </label>
+      </div>
+      <div id="slotRows"></div>
+    </div>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveSlots" type="button">Enregistrer les créneaux</button>
+    </div>
+
+    <div>
+    <h2 class="a-h2">Remises automatiques</h2>
+    <p class="a-hint">
+      Des paliers de panier, appliqués tout seuls et annoncés dans la boutique
+      (« −10 % dès 100 € »). Cinq au maximum. Laisse vide pour n'en avoir aucun.
+    </p>
+    <div id="tierRows"></div>
+    <button class="a-btn a-btn--ghost a-btn--block" id="addTier" type="button">+ Ajouter un palier</button>
+    <button class="a-btn a-btn--primary a-btn--block" id="saveTiers" type="button">Enregistrer les paliers</button>
+    </div>
+
+    <div>
+    <h2 class="a-h2">Codes promo</h2>
+    <p class="a-hint">
+      Un client ne cumule jamais un code et un palier : <b>la meilleure des deux
+      remises s'applique</b>, jamais les deux. Le code n'est décompté qu'une fois
+      la commande enregistrée.
+    </p>
+    <div class="a-row">
+      <label class="a-field"><span>Code</span><input id="fPromoCode" maxlength="20" placeholder="BIENVENUE"></label>
+      <label class="a-field">
+        <span>Type</span>
+        <select id="fPromoType">
+          <option value="percent">Pourcentage</option>
+          <option value="amount">Montant fixe</option>
+        </select>
+      </label>
+    </div>
+    <div class="a-row">
+      <label class="a-field"><span id="fPromoValueLabel">Remise (%)</span><input id="fPromoValue" type="text"   inputmode="decimal"></label>
+      <label class="a-field"><span>Panier minimum (€)</span><input id="fPromoMin" type="text"   inputmode="decimal" placeholder="0"></label>
+    </div>
+    <div class="a-row">
+      <label class="a-field"><span>Expire le</span><input id="fPromoExpires" type="date"></label>
+      <label class="a-field"><span>Usages maximum</span><input id="fPromoMaxUses" type="number" min="1" inputmode="numeric" placeholder="illimité"></label>
+    </div>
+    <div class="a-toggle">
+      <label><input type="checkbox" id="fPromoOnce" checked> Une seule fois par client</label>
+      <label><input type="checkbox" id="fPromoActive" checked> Actif</label>
+    </div>
+    <button class="a-btn a-btn--primary a-btn--block" id="savePromo" type="button">Enregistrer le code</button>
+    <ul class="a-list" id="promosList"></ul>
+    </div>
+
+    <h2 class="a-h2">Annonces</h2>
+    <p class="a-hint">
+      Un message à ceux qui ont <b>déjà commandé</b> — eux seuls, car Telegram
+      interdit d'écrire à qui n'a jamais parlé au bot. <b>Ton texte part tel
+      quel</b> : le bot n'ajoute plus rien en dessous.
+      <br>
+      Un client qui écrit <code>/stop</code> ne reçoit plus d'annonces, et le
+      bouton est aussi dans son profil — mais <b>plus rien ne le lui dit</b>.
+      Pense à laisser une sortie dans tes propres mots de temps en temps :
+      celui qui ne sait pas comment s'arrêter bloque le bot, et un blocage est
+      définitif. Les messages sur ses propres commandes, eux, continuent : ce
+      sont des réponses, pas de la publicité.
+    </p>
+    <label class="a-field">
+      <span>Ton message</span>
+      <textarea id="fAnnounce" rows="4" maxlength="3000"
+                placeholder="Arrivage du jour : Plasma Static Bubble Gum, en quantité limitée."></textarea>
+    </label>
+    <div class="a-row">
+      <label class="a-field">
+        <span>Commandé depuis (jours)</span>
+        <input id="fAnnounceDays" type="number" min="1" max="3650" inputmode="numeric" placeholder="tous">
+      </label>
+      <label class="a-field">
+        <span>Au moins N commandes</span>
+        <input id="fAnnounceMin" type="number" min="1" max="99" inputmode="numeric" placeholder="1">
+      </label>
+    </div>
+    <p class="a-hint" id="announceAudience">—</p>
+    <div class="a-toggle">
+      <label><input type="checkbox" id="fAnnounceForce"> Envoyer même si la dernière annonce est récente</label>
+    </div>
+    <button class="a-btn a-btn--primary a-btn--block" id="sendAnnounce" type="button">Envoyer l'annonce</button>
+    <ul class="a-list" id="announceHistory"></ul>
+
+    <h2 class="a-h2">Liens et QR codes</h2>
+    <p class="a-hint">
+      Le lien ouvre la boutique <b>directement sur l'article choisi</b> : collé
+      sur un flyer ou envoyé en message, le client tombe dessus au lieu de le
+      chercher. Le QR code est le même lien, en image : demande-le, il arrive
+      dans la conversation du bot, prêt à être glissé dans un visuel.
+    </p>
+    <label class="a-field">
+      <span>Destination</span>
+      <select id="linkTarget"></select>
+    </label>
+    <div class="a-link" id="linkBox" hidden>
+      <div class="a-link__qr" id="linkQr"></div>
+      <code class="a-link__url" id="linkUrl"></code>
+      <p class="a-hint" id="linkWarn" hidden></p>
+      <div class="a-row">
+        <button class="a-btn a-btn--ghost" id="copyLink" type="button">📋 Copier le lien</button>
+        <button class="a-btn a-btn--ghost" id="sendQr" type="button">🖼 M'envoyer le QR</button>
+      </div>
+    </div>
+    <p class="a-error" id="linkError" hidden></p>
+
+    <h2 class="a-h2">Export et sauvegarde</h2>
+    <p class="a-hint">
+      Les deux fichiers arrivent <b>dans la conversation du bot</b> : un
+      téléchargement lancé depuis Telegram n'aboutit pas toujours, un document
+      envoyé dans le chat se retrouve toujours. L'export part chez le
+      comptable — une ligne par article, lisible dans n'importe quel tableur ;
+      la sauvegarde est un instantané complet qui revient dans la boutique.
+      <b>Ni l'un ni l'autre ne contient de jeton, de mot de passe ou d'adresse
+      de base de données.</b>
+    </p>
+    <div class="a-row">
+      <label class="a-field"><span>Commandes depuis le</span><input id="fExportFrom" type="date"></label>
+      <label class="a-field"><span>jusqu'au</span><input id="fExportTo" type="date"></label>
+    </div>
+    <button class="a-btn a-btn--ghost a-btn--block" id="exportCsv" type="button">📊 M'envoyer les commandes (CSV)</button>
+    <button class="a-btn a-btn--ghost a-btn--block" id="downloadBackup" type="button">💾 M'envoyer une sauvegarde</button>
+
+    <p class="a-hint">
+      Restaurer <b>remplace tout</b> : le catalogue, les commandes, les
+      réglages et les codes de la boutique disparaissent au profit de ceux du
+      fichier. Demande-toi une sauvegarde de l'état actuel avant, au cas où.
+    </p>
+    <input id="restoreFile" type="file" accept="application/json,.json" hidden>
+    <button class="a-btn a-btn--ghost a-btn--block" id="pickBackup" type="button">⬆ Choisir une sauvegarde…</button>
+    <div class="a-restore" id="restorePreview" hidden>
+      <p id="restoreSummary"></p>
+      <button class="a-btn a-btn--danger a-btn--block" id="doRestore" type="button">Remplacer la boutique par ce fichier</button>
+    </div>
+
+    <h2 class="a-h2">Entretien automatique</h2>
+    <p class="a-hint">
+      Les deux besognes ci-dessous existaient déjà en boutons, plus haut. Le
+      défaut n'était pas qu'elles manquent, c'est qu'il fallait y penser — et
+      un vendeur qui tient une boutique ne clique pas sur « oublier les
+      adresses » tous les trente jours. Elles se font maintenant toutes
+      seules, une fois par jour.
+    </p>
+
+    <label><input type="checkbox" id="fSauvegardeAuto" checked>
+      M'envoyer une sauvegarde chaque jour</label>
+    <p class="a-hint">
+      Un fichier déposé dans ta conversation avec le bot. Il ne détruit rien,
+      il ne coûte qu'un message, et le jour où le disque lâche c'est la seule
+      chose qui compte. Un fichier dans une conversation Telegram se retrouve
+      des mois plus tard, se transfère, et survit au téléphone qu'on change.
+    </p>
+
+    <label><input type="checkbox" id="fOubliAuto">
+      Oublier les vieilles adresses automatiquement</label>
+    <div class="a-row">
+      <label class="a-field"><span>Au bout de combien de jours</span>
+        <input id="fOubliJours" type="number" min="7" max="3650" step="1" value="30">
+      </label>
+    </div>
+    <p class="a-hint">
+      Éteint par défaut, parce qu'il efface pour de bon. Ce qui part : le nom,
+      l'identifiant, l'adresse, le téléphone et la note. Ce qui reste : les
+      montants, les articles et le secteur — ton bilan ne bouge pas.
+      <b>Une commande encore en cours n'est jamais touchée</b>, si vieille
+      soit-elle : une livraison sans adresse serait impossible à faire.
+      Minimum sept jours, le temps qu'une commande soit livrée, contestée et
+      réglée. Et l'oubli passe toujours après la sauvegarde du jour : si elle
+      échoue, rien n'est détruit.
+    </p>
+    <p class="a-hint" id="entretienJournal"></p>
+
+    <h2 class="a-h2">Effacer des commandes</h2>
+    <p class="a-hint">
+      Trois façons de repartir, et elles ne se valent pas. <b>Oublier qui a
+      commandé</b> garde les montants — ton bilan ne bouge pas — mais efface le
+      nom, l'identifiant, l'adresse, le téléphone et la note : c'est presque
+      toujours le bon choix, on garde sa comptabilité sans garder le domicile de
+      ses clients de l'an dernier. <b>Effacer avant une date</b> supprime les
+      commandes et leur chiffre. <b>Tout effacer</b> remet le magasin à zéro —
+      pour une boutique qu'on ouvre vraiment après l'avoir essayée.
+      <b>Aucune des trois ne se rattrape</b> : une sauvegarde part dans ta
+      conversation avant, et l'effacement est refusé si elle n'a pas pu partir.
+    </p>
+    <div class="a-row">
+      <label class="a-field"><span>Que faire</span>
+        <select id="fPurgeMode">
+          <option value="anonymiser">Oublier qui a commandé</option>
+          <option value="avant">Effacer les commandes</option>
+          <option value="tout">Tout effacer (remise à zéro)</option>
+        </select>
+      </label>
+      <label class="a-field" id="fPurgeDateField"><span>Avant le</span><input id="fPurgeDate" type="date"></label>
+    </div>
+    <label><input type="checkbox" id="fPurgeBackup" checked> M'envoyer une sauvegarde d'abord</label>
+    <label class="a-field"><span>Écris EFFACER pour confirmer</span>
+      <input id="fPurgeConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="EFFACER">
+    </label>
+    <button class="a-btn a-btn--danger a-btn--block" id="doPurge" type="button">Effacer</button>
+
+    <h2 class="a-h2">Effacer les données d'une personne</h2>
+    <p class="a-hint">
+      Le bouton est aussi sur chaque fiche, dans <b>Clients</b> et dans
+      <b>Utilisateurs</b>. Ici, c'est pour quelqu'un qui n'y figure pas : une
+      personne qui a mis des produits en favori sans jamais commander ni
+      écrire au bot n'a de fiche nulle part, mais la boutique garde quand même
+      des traces d'elle. Colle son identifiant Telegram.
+      <b>Oublier</b> détache la personne de tout en gardant les montants —
+      ton bilan ne bouge pas. <b>Tout effacer</b> enlève aussi ses commandes et
+      ses avis. Ni l'un ni l'autre ne lève un blocage : sinon effacer
+      deviendrait le moyen de se débloquer.
+    </p>
+    <label class="a-field"><span>Identifiant Telegram</span>
+      <input id="fOublieId" type="text" inputmode="numeric" autocomplete="off"
+             spellcheck="false" placeholder="123456789">
+    </label>
+    <div id="fOublieBloc"></div>
+
+    <h2 class="a-h2">Vérifications</h2>
+    <ul class="a-list" id="verificationsList"></ul>
+
+    <h2 class="a-h2">Clients bloqués</h2>
+    <p class="a-hint">
+      Un client bloqué ne peut plus passer commande. Le bouton se trouve sur
+      chaque commande reçue, dans l'onglet Commandes.
+    </p>
+    <ul class="a-list" id="blockedList"></ul>
+  </section>
+
+</main>
+
+<!-- ══ Éditeur de produit ══ -->
+<div class="a-modal" id="editor" hidden>
+  <div class="a-modal__backdrop" data-close></div>
+  <div class="a-modal__panel" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+    <header class="a-modal__head">
+      <h2 id="editorTitle">Produit</h2>
+      <button class="a-iconbtn" type="button" data-close aria-label="Fermer">✕</button>
+    </header>
+    <div class="a-modal__body">
+      <label class="a-field"><span>Nom</span><input id="fName" maxlength="60"></label>
+      <label class="a-field"><span>Description courte (vignette)</span><input id="fShort" maxlength="140"></label>
+      <label class="a-field"><span>Description complète</span><textarea id="fDesc" rows="4" maxlength="2000"></textarea></label>
+      <label class="a-field">
+        <span>Caractéristiques (une par ligne, 6 maximum)</span>
+        <textarea id="fPoints" rows="4" placeholder="Culture indoor&#10;Séchage lent, 3 semaines d'affinage&#10;Nez terreux et sucré"></textarea>
+      </label>
+
+      <div class="a-row">
+        <label class="a-field"><span>Catégorie</span><select id="fCategory"></select></label>
+        <label class="a-field"><span>Pastille</span><input id="fBadge" maxlength="20" placeholder="NOUVEAU"></label>
+      </div>
+      <!-- La promo s'applique à tous les formats : les prix restent les prix
+           pleins, la boutique barre l'ancien et affiche « -X % ». -->
+      <label class="a-field"><span>Promo (%) — vide ou 0 : pas de promo</span>
+        <input id="fRemise" type="number" min="0" max="90" step="1" inputmode="numeric" placeholder="0">
+      </label>
+
+      <label class="a-field"><span>Étiquettes (séparées par des virgules)</span><input id="fTags" placeholder="Indica, Nuit"></label>
+      <!-- Image principale : la vignette de la grille. Le bouton d'envoi
+           n'apparaît que sur un produit déjà enregistré, comme la galerie. -->
+      <div class="a-vignette">
+        <span class="a-field__label">Image principale</span>
+        <div class="a-vignette__ligne">
+          <span class="a-vignette__apercu"><img id="fImageApercu" src="" alt=""></span>
+          <div class="a-vignette__actions">
+            <input id="imageFile" type="file" accept="image/*" hidden>
+            <button class="a-btn a-btn--sm a-btn--primary" id="pickImage" type="button" hidden>
+              📱 Depuis ma galerie
+            </button>
+            <select id="fImage"></select>
+          </div>
+        </div>
+        <div class="a-media__envoi" id="imageEnvoi" hidden>
+          <div class="a-media__barre"><div id="imageProgres"></div></div>
+          <span id="imageEtat"></span>
+        </div>
+      </div>
+      <label class="a-field" id="imagePathField" hidden>
+        <span>Chemin ou adresse de la photo</span>
+        <input id="fImagePath" maxlength="300" placeholder="/assets/products/ma-photo.jpg">
+      </label>
+
+      <!-- Galerie : n'apparaît que sur un produit déjà enregistré, puisqu'un
+           média a besoin d'un produit auquel se rattacher. -->
+      <div class="a-media" id="mediaBlock" hidden>
+        <span class="a-field__label">Photos, vidéos et GIF de la fiche</span>
+        <p class="a-hint" id="mediaHint"></p>
+        <div class="a-media__list" id="mediaList"></div>
+        <!-- Le chemin naturel depuis un téléphone : on prend dans la galerie.
+             `capture` absent volontairement, pour laisser le choix entre la
+             pellicule et l'appareil photo. -->
+        <input id="mediaFile" type="file" accept="image/*,video/*" multiple hidden>
+        <button class="a-btn a-btn--primary a-btn--block" id="pickMedia" type="button">
+          📱 Depuis ma galerie
+        </button>
+        <div class="a-media__envoi" id="mediaEnvoi" hidden>
+          <div class="a-media__barre"><div id="mediaProgres"></div></div>
+          <span id="mediaEtat"></span>
+        </div>
+
+        <p class="a-hint a-media__ou">ou colle une adresse</p>
+
+        <div class="a-row">
+          <label class="a-field a-field--grow">
+            <span>Adresse d'un média</span>
+            <input id="fMediaUrl" maxlength="300" placeholder="https://… ou /assets/products/ma-photo.jpg">
+          </label>
+          <label class="a-field">
+            <span>Type</span>
+            <select id="fMediaKind">
+              <option value="photo">Photo</option>
+              <option value="video">Vidéo</option>
+              <option value="gif">GIF animé</option>
+            </select>
+          </label>
+        </div>
+        <button class="a-btn a-btn--ghost a-btn--block" id="addMedia" type="button">+ Ajouter à la galerie</button>
+      </div>
+
+      <div class="a-toggle">
+        <label><input type="checkbox" id="fVisible" checked> Visible dans la boutique</label>
+        <label><input type="checkbox" id="fHasVariants"> Plusieurs formats</label>
+      </div>
+
+      <div id="simplePricing">
+        <div class="a-row">
+          <label class="a-field"><span>Prix (€)</span><input id="fPrice" type="text"   inputmode="decimal"></label>
+          <label class="a-field"><span>Stock</span><input id="fStock" type="number" min="0" inputmode="numeric"></label>
+        </div>
+      </div>
+
+      <div id="variantPricing" hidden>
+        <span class="a-field__label">Formats</span>
+        <div id="variantRows"></div>
+        <button class="a-btn a-btn--ghost a-btn--block" id="addVariant" type="button">+ Ajouter un format</button>
+      </div>
+
+      <p class="a-error" id="editorError" hidden></p>
+    </div>
+    <footer class="a-modal__foot">
+      <button class="a-btn a-btn--danger" id="deleteProduct" type="button">Supprimer</button>
+      <!-- Dupliquer n'a de sens que sur une fiche déjà enregistrée : masqué
+           tant qu'on est en train d'en créer une, comme le lien et le QR. -->
+      <button class="a-btn a-btn--ghost" id="duplicateProduct" type="button" hidden>⧉ Dupliquer</button>
+      <button class="a-btn a-btn--ghost" id="productLink" type="button" hidden>🔗 Lien &amp; QR</button>
+      <button class="a-btn a-btn--primary a-btn--grow" id="saveProduct" type="button">Enregistrer</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/js/admin.js" type="module"></script>
+</body>
+</html>

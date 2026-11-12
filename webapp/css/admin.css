@@ -1,0 +1,989 @@
+/* ══════════════════════════════════════════════════════════════
+   Espace admin — back-office.
+   Reprend la palette « Néon nuit » de style.css, mais en version
+   calme : ici on lit des chiffres et on remplit des champs. Les
+   halos sont réservés aux boutons d'action et aux alertes.
+   ══════════════════════════════════════════════════════════════ */
+
+body.admin {
+  background-color: var(--night);
+  background-image:
+    radial-gradient(80% 40% at 50% -10%, rgb(var(--halo-rgb) / .38), transparent 70%),
+    linear-gradient(180deg, var(--night-2), var(--night) 55%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  padding-bottom: calc(24px + var(--safe-bottom));
+}
+
+/* Surfaces communes : un vert translucide sur le fond de nuit. */
+.a-kpi, .a-list li, .a-order, .a-stock, .a-product, .a-search,
+.a-filter, .a-field input, .a-field select, .a-field textarea, .a-variant input {
+  background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft);
+  color: var(--cream);
+}
+
+/* ── Écran de contrôle d'accès ───────────────────────────── */
+.a-gate {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center; padding: 24px;
+  background: var(--night);
+  color: var(--cream);
+}
+.a-gate__card { text-align: center; font-weight: 700; }
+/* Idem pour l'écran d'accès refusé, qui sert aussi à annoncer une panne de
+   stockage : c'est là qu'on lit le remède. */
+/* Aligné à gauche dès qu'il y a plus d'une ligne : une commande à recopier
+   centrée sur trois lignes se lit très mal. */
+#gateText {
+  white-space: pre-line; line-height: 1.55; overflow-wrap: anywhere;
+  max-width: 34rem; margin: 0 auto; padding: 0 4px;
+}
+.a-gate--denied #gateText { text-align: left; font-size: 13.5px; }
+.a-spinner {
+  width: 34px; height: 34px; margin: 0 auto 14px;
+  border: 4px solid rgb(var(--line-rgb) / .3); border-top-color: var(--neon);
+  border-radius: 50%; animation: spin .8s linear infinite;
+  box-shadow: var(--glow-neon);
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+.a-gate--denied .a-spinner { display: none; }
+
+/* Titres et chiffres reprennent le lettrage d'affiche. */
+.a-top__title, .a-h2, .a-kpi__value, .a-order__ref, .a-modal__head h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-synthesis-weight: none;
+}
+
+/* ── En-tête ─────────────────────────────────────────────── */
+.a-top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(12px + var(--safe-top)) 16px 12px;
+  background: linear-gradient(180deg, rgb(var(--night2-rgb) / .95), rgb(var(--night-rgb) / .82));
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-soft);
+  box-shadow: 0 1px 0 rgb(var(--neon-rgb) / .3);
+  color: var(--cream);
+}
+.a-top__eyebrow { display: block; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--neon); }
+.a-top__title { font-size: 25px; letter-spacing: .02em; line-height: 1.15; }
+
+.a-iconbtn {
+  width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+  background: rgb(var(--neon-rgb) / .1); color: var(--neon); font-size: 19px;
+  border: 1px solid rgb(var(--neon-rgb) / .45); border-radius: 11px;
+}
+.a-iconbtn:active { background: rgb(var(--neon-rgb) / .25); }
+.a-modal .a-iconbtn { color: var(--neon); }
+
+/* ── Onglets ─────────────────────────────────────────────── */
+.a-tabs {
+  position: sticky; top: 0; z-index: 19;
+  display: flex; gap: 4px; padding: 8px 12px;
+  background: rgb(var(--night-rgb) / .92); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-soft);
+  overflow-x: auto; scrollbar-width: none;
+}
+.a-tabs::-webkit-scrollbar { display: none; }
+.a-tab {
+  position: relative; flex: 1; white-space: nowrap;
+  padding: 9px 12px; font-size: 14px; font-weight: 800;
+  color: var(--muted); background: transparent; border: 0; border-radius: 999px;
+}
+.a-tab[aria-selected="true"] {
+  color: var(--ink); background: linear-gradient(180deg, var(--neon-hi), var(--neon));
+  box-shadow: var(--glow-neon);
+}
+.a-tab__dot {
+  display: inline-block; width: 7px; height: 7px; margin-left: 5px;
+  background: var(--pink); border-radius: 50%; vertical-align: middle;
+  box-shadow: 0 0 8px var(--pink);
+}
+
+.a-main { position: relative; z-index: 1; padding: 16px 14px; max-width: 720px; margin: 0 auto; }
+.a-h2 { font-size: 21px; letter-spacing: .02em; margin: 24px 0 10px; }
+
+/* ── Indicateurs ─────────────────────────────────────────── */
+/* `1fr` ne descend pas sous la largeur du contenu : un chiffre d'affaires à
+   quatre chiffres poussait les tuiles hors de la grille sur un petit écran. */
+.a-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.a-kpi { border-radius: 16px; padding: 13px 14px; box-shadow: var(--shadow-sm); }
+.a-kpi__label { display: block; font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.a-kpi__value { display: block; font-size: 27px; line-height: 1.2; margin-top: 3px; overflow-wrap: anywhere; }
+.a-kpi__note { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted); margin-top: 2px; }
+.a-kpi--accent {
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .22), rgb(var(--neon-rgb) / .1));
+  border-color: rgb(var(--neon-rgb) / .5); box-shadow: var(--glow-neon);
+}
+.a-kpi--accent .a-kpi__value { color: var(--neon); }
+.a-kpi--warn {
+  background: linear-gradient(180deg, rgb(var(--gold-rgb) / .2), rgb(var(--gold-lo-rgb) / .08));
+  border-color: rgb(var(--gold-rgb) / .5);
+}
+.a-kpi--warn .a-kpi__value { color: var(--gold); }
+
+/* ── Listes ──────────────────────────────────────────────── */
+.a-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.a-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border-radius: 14px; padding: 11px 13px; font-size: 14px; font-weight: 700;
+}
+.a-muted { font-weight: 700; color: var(--muted); font-size: 13px; }
+.a-empty { padding: 22px 4px; text-align: center; color: var(--muted); font-weight: 700; }
+
+/* ── Filtres ─────────────────────────────────────────────── */
+.a-filters { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 12px; scrollbar-width: none; }
+.a-filters::-webkit-scrollbar { display: none; }
+.a-filter {
+  flex: none; padding: 8px 14px; font-size: 13.5px; font-weight: 800; border-radius: 999px;
+}
+.a-filter[aria-pressed="true"] {
+  color: var(--ink); background: linear-gradient(180deg, var(--neon-hi), var(--neon));
+  border-color: rgb(var(--ink-rgb) / .5); box-shadow: var(--glow-neon);
+}
+
+/* ── Carte commande ──────────────────────────────────────── */
+/* Un nom de produit sans espace — ça existe — poussait la page de trois
+   mille pixels vers la droite sur un petit écran. On coupe où il faut. */
+.a-order, .a-stock, .a-product, .a-list li, .a-promo, .a-zone {
+  overflow-wrap: anywhere;
+}
+.a-order__items li, .a-order__note, .a-order__meta, .a-order__ship li,
+.a-stock__name, .a-stock__label, .a-product__name, .a-product__meta {
+  min-width: 0;
+}
+
+.a-order { border-radius: 16px; padding: 13px 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
+.a-order__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.a-order__ref { font-size: 19px; letter-spacing: .03em; color: var(--neon); }
+.a-order__total { font-weight: 800; font-size: 16px; color: var(--gold); }
+.a-order__meta { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 3px 0 8px; }
+.a-order__items { list-style: none; margin: 0 0 8px; padding: 0; font-size: 13.5px; font-weight: 700; }
+.a-order__items li { padding: 2px 0; }
+.a-order__note {
+  font-size: 13px; font-weight: 700; background: rgb(var(--ink-rgb) / .45);
+  border-left: 3px solid var(--halo); padding: 8px 10px; border-radius: 0 10px 10px 0; margin-bottom: 9px;
+}
+.a-order__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+/* Le blocage reste en retrait : c'est un geste rare, pas une action courante. */
+.a-order__ban { margin-left: auto; opacity: .75; }
+
+.a-status {
+  display: inline-block; font-size: 11.5px; font-weight: 800; letter-spacing: .04em;
+  padding: 3px 10px; border: 1px solid currentColor; border-radius: 999px;
+}
+.a-status--nouvelle { color: var(--gold); background: rgb(var(--gold-rgb) / .12); }
+.a-status--confirmee { color: rgb(var(--halo2-rgb)); background: rgb(var(--halo2-rgb) / .12); }
+.a-status--prete { color: var(--pink); background: rgb(var(--halo2-rgb) / .12); }
+.a-status--livree { color: var(--neon); background: rgb(var(--neon-rgb) / .14); }
+.a-status--annulee { color: var(--muted); background: rgba(255, 255, 255, .06); }
+
+/* ── Stock ───────────────────────────────────────────────── */
+.a-search {
+  width: 100%; font: inherit; font-size: 15px; font-weight: 700;
+  border-radius: 14px; padding: 11px 14px; margin-bottom: 12px;
+}
+.a-search::placeholder { color: rgb(var(--cream-rgb) / .4); }
+.a-search:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+
+.a-stock { border-radius: 16px; padding: 12px 13px; margin-bottom: 9px; }
+.a-stock__name { font-weight: 800; font-size: 14.5px; display: flex; align-items: center; gap: 7px; }
+.a-stock__hidden {
+  font-size: 10.5px; font-weight: 800; color: var(--muted);
+  background: rgba(255, 255, 255, .08); border-radius: 6px; padding: 2px 7px;
+}
+.a-stock__rows { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+.a-stock__row { display: flex; align-items: center; gap: 8px; }
+.a-stock__label { flex: 1; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+.a-stepper { display: flex; align-items: center; gap: 5px; flex: none; }
+.a-stepper button {
+  width: 30px; height: 30px; display: grid; place-items: center; line-height: 1;
+  color: var(--cream); background: rgba(255, 255, 255, .08);
+  border: 1px solid var(--line-soft); border-radius: 9px; font-size: 16px; font-weight: 800;
+}
+.a-stepper button:active { background: rgb(var(--neon-rgb) / .25); }
+.a-stepper input {
+  width: 56px; font: inherit; font-size: 15px; font-weight: 800; text-align: center;
+  color: var(--cream); background: rgb(var(--ink-rgb) / .5);
+  border: 1px solid var(--line-soft); border-radius: 9px; padding: 4px 2px;
+}
+.a-stepper input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-stock__row--low .a-stepper input { border-color: var(--gold); color: var(--gold); }
+.a-stock__row--out .a-stepper input { border-color: var(--red); color: var(--red); background: rgb(var(--red-rgb) / .12); }
+
+/* ── Produits ────────────────────────────────────────────── */
+.a-product {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  border-radius: 16px; padding: 11px 12px; margin-bottom: 9px;
+}
+.a-product__art {
+  width: 46px; height: 46px; flex: none; display: grid; place-items: center;
+  background: radial-gradient(60% 60% at 50% 60%, rgb(var(--neon-rgb) / .28), transparent 72%), rgb(var(--ink-rgb) / .5);
+  border: 1px solid var(--line-soft); border-radius: 11px;
+}
+.a-product__art img { width: 80%; }
+.a-product__info { flex: 1; min-width: 0; }
+.a-product__name { font-weight: 800; font-size: 14.5px; display: block; }
+.a-product__meta { font-size: 12.5px; font-weight: 700; color: var(--muted); display: block; }
+.a-product--hidden { opacity: .5; }
+
+/* ── Le classement ───────────────────────────────────────────
+   En mode classement, la ligne cesse d'être un bouton qui ouvre la fiche :
+   elle devient une poignée. Ouvrir une fiche par mégarde en rangeant son
+   catalogue, c'est perdre sa place dans la liste à chaque fois. */
+.a-classement { margin-bottom: 9px; }
+/* `stretch` et non `center` : la colonne de flèches prend exactement la
+   hauteur de la ligne. Avec une hauteur fixe elle la dépassait de vingt
+   pixels, et la liste prenait un rythme vertical irrégulier — on voyait les
+   flèches avant de voir les produits. */
+.a-rang { display: flex; align-items: stretch; gap: 8px; margin-bottom: 9px; }
+.a-rang .a-product { margin-bottom: 0; flex: 1; min-width: 0; }
+.a-rang__fleches { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.a-rang__btn {
+  width: 38px; flex: 1; min-height: 26px; border-radius: 9px;
+  color: var(--cream); background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--line-soft);
+  font-size: 14px; font-weight: 800; line-height: 1;
+  display: grid; place-items: center;
+}
+.a-rang__btn:disabled { opacity: .3; }
+/* Le premier de la liste est celui que le client voit en premier : on le
+   dit, sinon le vendeur range sans savoir ce qu'il range. */
+.a-rang--tete .a-product { border-color: rgb(var(--neon-rgb) / .5); }
+.a-rang__tete {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--neon); display: block;
+}
+
+/* ── Boutons ─────────────────────────────────────────────── */
+.a-btn {
+  color: var(--cream); background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 15px;
+  font-weight: 800; font-size: 14px;
+  transition: transform .12s ease, filter .12s ease;
+}
+.a-btn:active { transform: translateY(1px); filter: brightness(1.1); }
+.a-btn--primary {
+  color: var(--ink); background: linear-gradient(180deg, var(--neon-hi), var(--neon));
+  border-color: rgb(var(--ink-rgb) / .5); box-shadow: var(--glow-neon);
+}
+.a-btn--ghost { background: rgba(255, 255, 255, .05); }
+.a-btn--danger { color: var(--red); background: rgb(var(--red-rgb) / .1); border-color: rgb(var(--red-rgb) / .55); }
+.a-btn--block { display: block; width: 100%; margin-bottom: 14px; }
+.a-btn--grow { flex: 1; }
+.a-btn--sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+.a-btn[disabled] { opacity: .45; pointer-events: none; box-shadow: none; }
+
+/* ── Catégories ──────────────────────────────────────────── */
+.a-hint { font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1.45; margin: 0 0 14px; }
+.a-hours {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13.5px; font-weight: 700;
+}
+.a-hours__day { flex: 1; min-width: 74px; color: var(--muted); }
+.a-hours input[type="time"] {
+  font: inherit; font-size: 13.5px; font-weight: 700; color: var(--cream);
+  background: rgb(var(--panel-rgb) / .6); border: 1px solid var(--line-soft);
+  border-radius: 9px; padding: 6px 8px;
+}
+.a-hours input[type="time"]:disabled { opacity: .4; }
+.a-hours__closed { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.a-hours__closed input { width: 17px; height: 17px; accent-color: var(--neon); }
+
+.a-verif__actions { display: flex; gap: 6px; flex: none; }
+
+.a-catrow { display: flex; gap: 7px; align-items: center; margin-bottom: 8px; }
+.a-catrow input {
+  min-width: 0; flex: 1; font: inherit; font-size: 14px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft); border-radius: 10px; padding: 8px 10px;
+}
+.a-catrow input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-category__emoji { width: 58px; flex: none !important; text-align: center; }
+
+/* Le « où et quand » d'une commande, sous les articles. */
+.a-order__ship {
+  list-style: none; margin: 8px 0 0; padding: 8px 10px;
+  border-radius: 11px; background: rgb(var(--panel-rgb) / .55);
+  border: 1px solid var(--line-soft);
+  font-size: 12.5px; font-weight: 700; line-height: 1.5; color: var(--muted);
+}
+.a-order__ship li:first-child { color: var(--cream); font-weight: 800; }
+
+.a-restore {
+  margin-top: 10px; padding: 11px 12px; border-radius: 14px;
+  border: 1px solid rgb(var(--gold-rgb) / .5); background: rgb(var(--gold-rgb) / .1);
+}
+.a-restore p { margin: 0 0 10px; font-size: 13px; font-weight: 700; line-height: 1.45; }
+
+/* ── Lien direct et QR code ───────────────────────────────── */
+
+.a-link {
+  margin-top: 10px; padding: 12px; border-radius: 14px;
+  border: 1px solid var(--line-soft); background: rgb(var(--panel-rgb) / .45);
+}
+/* Le QR reste sur fond blanc quoi qu'il arrive : posé sur le fond sombre du
+   panneau, il ne se lirait pas. */
+.a-link__qr {
+  display: flex; justify-content: center;
+  padding: 10px; border-radius: 12px; background: #fff;
+}
+.a-link__qr svg { display: block; width: 100%; max-width: 220px; height: auto; }
+/* L'adresse est longue et sans espace : sans cette césure, elle déborderait
+   du panneau sur un téléphone étroit. */
+.a-link__url {
+  display: block; margin: 10px 0; padding: 8px 10px;
+  border-radius: 10px; background: rgb(var(--night-rgb) / .55);
+  font-size: 12.5px; line-height: 1.5; color: var(--cream);
+  overflow-wrap: anywhere; word-break: break-all; user-select: all;
+}
+.a-link .a-row { gap: 8px; }
+.a-link .a-btn { min-width: 0; }
+
+/* ── Galerie d'un produit ─────────────────────────────────── */
+
+.a-media {
+  margin: 4px 0 2px; padding: 11px 12px; border-radius: 14px;
+  border: 1px solid var(--line-soft); background: rgb(var(--panel-rgb) / .45);
+}
+.a-media__list { display: flex; flex-direction: column; gap: 7px; margin: 8px 0; }
+.a-media__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: 11px;
+  border: 1px solid var(--line-soft); background: rgb(var(--night-rgb) / .45);
+}
+/* La vignette est l'information utile : on la montre en vrai, plutôt que de
+   faire confiance à un nom de fichier. */
+.a-media__vignette {
+  flex: none; width: 48px; height: 48px; border-radius: 8px; overflow: hidden;
+  background: rgb(var(--ink-rgb) / .6); display: grid; place-items: center;
+  font-size: 18px;
+}
+.a-media__vignette img, .a-media__vignette video { width: 100%; height: 100%; object-fit: cover; }
+.a-media__texte { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; }
+.a-media__texte b {
+  display: block; font-size: 13px;
+  /* La police d'affiche ne porte pas les emoji : sans cette pile, « 🖼 » et
+     « 🎬 » sortent en carrés vides. */
+  font-family: 'Baloo 2', 'Noto Color Emoji', 'Apple Color Emoji', system-ui, sans-serif;
+}
+.a-media__texte span { color: var(--muted); overflow-wrap: anywhere; }
+.a-media__actions { flex: none; display: flex; gap: 4px; }
+.a-media__actions button {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line-soft);
+  background: rgb(var(--panel-rgb) / .7); color: var(--cream); font-size: 13px; line-height: 1;
+}
+.a-media__actions button:disabled { opacity: .35; }
+.a-field--grow { flex: 1; min-width: 0; }
+
+/* L'image principale, avec son aperçu : c'est la vignette que verront les
+   clients dans la grille, autant la voir en la choisissant. */
+.a-vignette { margin: 4px 0 2px; }
+.a-vignette__ligne { display: flex; gap: 10px; align-items: stretch; margin-top: 5px; }
+.a-vignette__apercu {
+  flex: none; width: 64px; height: 64px; border-radius: 11px; overflow: hidden;
+  border: 1px solid var(--line-soft); background: rgb(var(--ink-rgb) / .5);
+  display: grid; place-items: center;
+}
+.a-vignette__apercu img { width: 100%; height: 100%; object-fit: cover; }
+.a-vignette__actions { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.a-vignette__actions select {
+  width: 100%; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--cream);
+  background: rgb(var(--night-rgb) / .55); border: 1px solid var(--line-soft);
+  border-radius: 11px; padding: 9px 10px;
+}
+
+/* L'envoi depuis la galerie : une barre qui avance vaut mieux qu'un bouton
+   grisé, surtout pour une vidéo de vingt mégaoctets sur un réseau de mobile. */
+.a-media__envoi {
+  display: flex; align-items: center; gap: 9px; margin-top: 8px;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.a-media__barre {
+  flex: 1; height: 6px; border-radius: 999px; overflow: hidden;
+  background: rgb(var(--night-rgb) / .6);
+}
+.a-media__barre div {
+  height: 100%; width: 0; border-radius: 999px;
+  background: linear-gradient(90deg, var(--green-dark), var(--neon));
+  transition: width .2s linear;
+}
+.a-media__ou {
+  text-align: center; margin: 10px 0 2px; opacity: .7;
+  text-transform: lowercase; letter-spacing: .04em;
+}
+
+.a-features { display: flex; flex-direction: column; gap: 7px; margin-bottom: 4px; }
+.a-feature {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 11px 12px; border-radius: 14px;
+  border: 1px solid var(--line-soft); background: rgb(var(--panel-rgb) / .45);
+}
+.a-feature input { flex: none; width: 21px; height: 21px; margin-top: 1px; accent-color: var(--neon); }
+.a-feature__text { min-width: 0; }
+.a-feature__text b { display: block; font-size: 14.5px; font-weight: 800; }
+.a-feature__text small { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1.35; }
+/* Une fonctionnalité active se repère d'un coup d'œil dans la liste. */
+.a-feature:has(input:checked) { border-color: rgb(var(--neon-rgb) / .5); background: rgb(var(--neon-rgb) / .07); }
+
+.a-zone {
+  border: 1px solid var(--line-soft); border-radius: 14px;
+  padding: 11px 12px 2px; margin-bottom: 10px;
+  background: rgb(var(--panel-rgb) / .4);
+}
+.a-zone__head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.a-zone__name, .a-zone__codes {
+  min-width: 0; flex: 1; font: inherit; font-size: 14px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft); border-radius: 10px; padding: 8px 10px;
+}
+.a-zone__codes { width: 100%; margin-bottom: 10px; font-size: 13px; letter-spacing: .02em; }
+.a-zone__name:focus, .a-zone__codes:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-zone .a-field { margin-bottom: 10px; }
+.a-zone .a-field input { font-size: 14px; padding: 8px 10px; }
+
+/* Une journée de créneaux tient sur une ligne par plage : la semaine reste
+   lisible sans dérouler un accordéon par jour. */
+.a-slotday { border-top: 1px solid var(--line-soft); padding: 9px 0; }
+.a-slotday__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.a-slotday__head span { font-size: 13px; font-weight: 800; color: var(--muted); }
+.a-slotday__rows { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; }
+.a-slotday__rows:empty { margin-top: 0; }
+.a-slot { display: flex; gap: 6px; align-items: center; }
+.a-slot input {
+  min-width: 0; font: inherit; font-size: 13.5px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft); border-radius: 10px; padding: 7px 9px;
+}
+.a-slot__from, .a-slot__to { flex: 1; }
+.a-slot__cap { flex: 0 0 58px; text-align: center; }
+.a-slot input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-slot__unit { flex: none; font-size: 12px; font-weight: 800; color: var(--muted); }
+
+.a-tier { display: flex; gap: 7px; align-items: center; margin-bottom: 8px; }
+.a-tier input {
+  min-width: 0; flex: 1; font: inherit; font-size: 14px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft); border-radius: 10px; padding: 8px 10px;
+}
+.a-tier input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-tier__unit { flex: none; font-size: 12.5px; font-weight: 800; color: var(--muted); }
+/* Le pourcentage tient en trois chiffres : c'est le montant qui prend la place. */
+.a-tier__percent { flex: 0 0 62px !important; text-align: center; }
+
+/* Un code épuisé ou expiré reste visible, mais s'efface un peu : on doit voir
+   d'un coup d'œil lesquels tournent encore. */
+.a-promo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.a-promo__code { font-weight: 800; letter-spacing: .06em; }
+.a-promo__meta { font-size: 12px; font-weight: 700; color: var(--muted); }
+.a-list li.a-promo--off { opacity: .5; }
+
+/* ── Éditeur ─────────────────────────────────────────────── */
+.a-modal { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-end; }
+.a-modal__backdrop { position: absolute; inset: 0; background: rgb(var(--void-rgb) / .75); backdrop-filter: blur(4px); }
+.a-modal__panel {
+  position: relative; width: 100%; max-width: 720px; margin: 0 auto;
+  max-height: 94vh; display: flex; flex-direction: column;
+  background:
+    radial-gradient(80% 40% at 50% 0%, rgb(var(--halo-rgb) / .3), transparent 70%),
+    linear-gradient(180deg, var(--night-2), var(--night));
+  border: 1px solid var(--line-soft); border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, .6), 0 -1px 0 rgb(var(--neon-rgb) / .35);
+  animation: rise .25s cubic-bezier(.2,.9,.3,1.1);
+}
+.a-modal__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 15px 16px 11px; border-bottom: 1px solid var(--line-soft);
+}
+.a-modal__head h2 { font-size: 24px; letter-spacing: .02em; }
+.a-modal__body { overflow-y: auto; padding: 14px 16px; }
+/* Quatre boutons depuis que « Dupliquer » est là, et un téléphone n'a pas
+   la largeur. Sans retour à la ligne, « Lien & QR » se cassait en trois
+   lignes et le pied faisait la moitié de l'écran.
+
+   « Enregistrer » garde sa ligne à lui, en dessous : c'est le geste qu'on
+   cherche neuf fois sur dix, et le mettre à côté de « Supprimer » sur un
+   écran serré est le genre de voisinage qu'on regrette. */
+.a-modal__foot {
+  display: flex; flex-wrap: wrap; gap: 9px;
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  background: rgb(var(--ink-rgb) / .7); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line-soft);
+}
+.a-modal__foot > .a-btn { flex: 1 1 auto; white-space: nowrap; }
+.a-modal__foot > .a-btn--grow { flex-basis: 100%; }
+
+.a-field { display: block; margin-bottom: 12px; }
+.a-field > span, .a-field__label {
+  display: block; font-size: 12.5px; font-weight: 800; margin-bottom: 6px; color: var(--muted);
+}
+.a-field input, .a-field select, .a-field textarea {
+  width: 100%; font: inherit; font-size: 15px; font-weight: 700;
+  border-radius: 12px; padding: 10px 12px; resize: vertical;
+}
+.a-field input::placeholder, .a-field textarea::placeholder { color: rgb(var(--cream-rgb) / .4); }
+.a-field select option { background: var(--night-2); color: var(--cream); }
+.a-field input:focus, .a-field select:focus, .a-field textarea:focus {
+  outline: none; border-color: var(--neon); box-shadow: var(--glow-neon);
+}
+/* `flex: 1` ne descend pas sous la largeur du contenu : un libellé un peu long
+   poussait le champ hors de sa rangée sur un petit écran. `min-width: 0` le
+   laisse rétrécir, et la rangée passe à la ligne quand il n'y a vraiment plus
+   la place. */
+.a-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.a-row .a-field { flex: 1 1 8rem; min-width: 0; }
+.a-row .a-field > span { overflow-wrap: anywhere; }
+
+.a-toggle { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 14px; font-size: 14px; font-weight: 700; }
+.a-toggle label { display: flex; align-items: center; gap: 7px; }
+.a-toggle input { width: 19px; height: 19px; accent-color: var(--neon); }
+
+.a-variant { display: flex; gap: 7px; align-items: center; margin-bottom: 8px; }
+.a-variant input {
+  min-width: 0; font: inherit; font-size: 14px; font-weight: 700;
+  border-radius: 10px; padding: 8px 10px;
+}
+.a-variant input:focus { outline: none; border-color: var(--neon); box-shadow: var(--glow-neon); }
+.a-variant__label { flex: 2; }
+.a-variant__price, .a-variant__stock { flex: 1.1; }
+.a-variant__del {
+  width: 32px; height: 32px; flex: none; display: grid; place-items: center;
+  color: var(--red); background: rgb(var(--red-rgb) / .1);
+  border: 1px solid rgb(var(--red-rgb) / .55); border-radius: 10px; font-size: 15px; font-weight: 800;
+}
+
+.a-error {
+  background: rgb(var(--red-rgb) / .14); border: 1px solid rgb(var(--red-rgb) / .6); color: rgb(var(--red-rgb));
+  border-radius: 12px; padding: 10px 12px; font-size: 13.5px; font-weight: 700; margin: 4px 0 0;
+  /* Les messages de dépannage tiennent sur plusieurs lignes et portent des
+     chemins sans espace : sans ça, le remède s'écrase sur une seule ligne
+     illisible, ou déborde du panneau. */
+  white-space: pre-line; line-height: 1.5; overflow-wrap: anywhere;
+}
+
+/* Les liens d'itinéraire d'une commande à livrer : des cibles qu'on touche
+   avec le pouce, pas des mots soulignés au milieu d'une phrase. */
+.a-route { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.a-route a {
+  padding: 5px 10px; border-radius: 999px; text-decoration: none;
+  font-size: 12px; font-weight: 800; color: var(--cream);
+  background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .14);
+}
+
+/* ══ Tableau de bord ═══════════════════════════════════════
+   Les marques portent la couleur, jamais le texte : un vert clair
+   en lettres sur ce fond ne se lit pas. D'où deux tons seulement —
+   un vert de remplissage, tenu dans la bande de clarté qui reste
+   lisible sur une surface sombre, et le néon de la maison réservé
+   à ce qu'on veut souligner (aujourd'hui, le meilleur jour). */
+.a-viz {
+  --viz: #7fa327;          /* remplissage : une seule teinte, tout le tableau */
+  --viz-accent: #c6ff3d;   /* l'emphase, sur une marque à la fois */
+  --viz-grille: rgb(var(--cream-rgb) / .12);
+  --viz-piste: rgb(var(--cream-rgb) / .1);
+  margin: 0 0 14px;
+  padding: 14px 12px 10px;
+  border-radius: 16px;
+  background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft);
+}
+.a-viz__titre { font-size: 12px; font-weight: 800; color: var(--muted); margin: 0 2px 10px; }
+.a-viz svg { display: block; width: 100%; height: auto; overflow: visible; }
+.a-viz__vide { color: var(--muted); font-size: 13px; padding: 18px 2px; text-align: center; }
+
+/* Une colonne : bout arrondi côté valeur, carré sur la ligne de base. */
+.a-col { fill: var(--viz); transition: fill .12s ease; }
+.a-col--accent { fill: var(--viz-accent); }
+.a-col--vide { fill: var(--viz-piste); }
+.a-col__zone { fill: transparent; cursor: pointer; }
+.a-col__zone:hover + .a-col, .a-col__zone:focus-visible + .a-col { fill: var(--viz-accent); }
+.a-axe { fill: var(--muted); font-size: 9.5px; font-weight: 700; }
+.a-grille { stroke: var(--viz-grille); stroke-width: 1; }
+
+/* Barres horizontales : le nom au-dessus, la valeur au bout. */
+.a-barres { display: flex; flex-direction: column; gap: 9px; margin: 0; }
+.a-barre__tete { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; font-weight: 700; }
+.a-barre__tete b { font-weight: 800; }
+.a-barre__valeur { color: var(--muted); white-space: nowrap; }
+.a-barre__piste { height: 10px; border-radius: 999px; background: var(--viz-piste); overflow: hidden; }
+.a-barre__part { height: 100%; border-radius: 0 999px 999px 0; background: var(--viz); }
+
+/* Jauge : une part sur son total, sans deuxième teinte à distinguer. */
+.a-jauges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.a-jauge__valeur { font-size: 22px; font-weight: 800; }
+
+.a-hero {
+  padding: 16px 14px 14px; border-radius: 18px; margin-bottom: 10px;
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .18), rgb(var(--neon-rgb) / .06));
+  border: 1px solid rgb(var(--neon-rgb) / .4);
+}
+.a-hero__label { font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+/* Chiffres proportionnels : à cette taille, des chiffres de largeur fixe
+   donnent l'air d'être espacés au hasard. */
+.a-hero__valeur { display: block; font-size: 40px; line-height: 1.05; margin: 4px 0 2px; font-variant-numeric: proportional-nums; }
+.a-hero__delta { font-size: 13px; font-weight: 700; color: var(--muted); }
+.a-hero__delta b { font-weight: 800; }
+.a-hero__delta--haut b { color: var(--neon); }
+.a-hero__delta--bas b { color: var(--red); }
+
+/* La rangée de périodes : elle commande tout le panneau. */
+.a-periode { display: flex; gap: 8px; margin-bottom: 12px; }
+.a-periode button {
+  flex: 1; padding: 9px 4px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 800;
+  background: rgb(var(--panel-rgb) / .6); border: 1px solid var(--line-soft); color: var(--cream);
+}
+.a-periode button[aria-pressed='true'] {
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .3), rgb(var(--neon-rgb) / .12));
+  border-color: rgb(var(--neon-rgb) / .55); color: var(--neon);
+}
+
+/* Le tableau des valeurs, replié : aucune valeur n'est enfermée dans une
+   bulle qui n'existe pas au doigt. */
+.a-viz details { margin-top: 10px; }
+.a-viz summary { font-size: 12px; font-weight: 800; color: var(--muted); cursor: pointer; }
+.a-viz table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+.a-viz th, .a-viz td { text-align: right; padding: 4px 2px; border-bottom: 1px solid var(--viz-grille); font-variant-numeric: tabular-nums; }
+.a-viz th:first-child, .a-viz td:first-child { text-align: left; font-variant-numeric: normal; }
+.a-viz thead th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+/* La bulle de survol : elle complète, elle ne détient rien. */
+.a-bulle {
+  position: fixed; z-index: 60; pointer-events: none;
+  padding: 7px 10px; border-radius: 12px; font-size: 12px; font-weight: 700;
+  background: rgb(var(--void-rgb) / .95); border: 1px solid var(--line-soft);
+  color: var(--cream); box-shadow: var(--shadow-sm); white-space: nowrap;
+}
+
+/* ══ Clients ═══════════════════════════════════════════════
+   Une carte repliée dit qui, combien de fois, combien. Le reste
+   n'apparaît qu'à la demande : une fiche client entière par ligne
+   ferait défiler trois écrans pour retrouver quelqu'un. */
+.a-clients__compte { color: var(--muted); font-size: 12.5px; font-weight: 700; margin: 8px 2px 10px; }
+
+/* Les deux nombres en tête de l'onglet Utilisateurs : visiteurs, et combien
+   ont commandé. Un écart qui se lit d'un coup d'œil. */
+.a-userstat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+
+.a-client {
+  background: rgb(var(--panel-rgb) / .6);
+  border: 1px solid var(--line-soft);
+  border-radius: 16px; margin-bottom: 10px; overflow: hidden;
+}
+.a-client__tete {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+  width: 100%; text-align: left; padding: 12px 14px;
+  background: none; border: 0; color: var(--cream); font: inherit; cursor: pointer;
+}
+.a-client__qui { font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
+.a-client__chiffre { font-size: 15px; font-weight: 800; color: var(--neon); white-space: nowrap; }
+.a-client__meta { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
+.a-client__detail { padding: 0 14px 14px; }
+.a-client__gris { color: var(--muted); }
+.a-client__h3 { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 6px; }
+.a-client__detail p, .a-client__detail ul { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.a-client__detail ul { list-style: none; padding: 0; }
+.a-client__adresses li, .a-client__commandes li { padding: 8px 0; border-top: 1px solid var(--viz-grille, rgb(234 255 242 / .12)); }
+
+.a-client__chiffres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 0; }
+.a-client__chiffres dt { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.a-client__chiffres dd { margin: 2px 0 0; font-size: 15px; font-weight: 800; }
+
+.a-etat {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 800;
+  background: rgba(255, 255, 255, .08); border: 1px solid var(--line-soft);
+}
+.a-etat--ok { color: var(--neon); border-color: rgb(var(--neon-rgb) / .5); }
+.a-etat--ko { color: var(--red); border-color: rgb(var(--red-rgb) / .5); }
+
+/* Où partent les commandes, en clair sous le champ. Vert quand c'est réglé,
+   gris quand c'est le repli : un état qu'on lit d'un coup d'œil. */
+.a-canal {
+  margin: -4px 0 14px; padding: 8px 11px; border-radius: 10px;
+  font-size: 13px; font-weight: 700;
+  color: rgb(var(--cream-rgb) / .75);
+  background: rgb(var(--ink-rgb) / .5);
+  border: 1px solid var(--line-soft);
+}
+.a-canal--snap { color: var(--neon); border-color: rgb(var(--neon-rgb) / .4); }
+
+/* Le panneau d'effacement, déplié sous les actions de la fiche. Encadré de
+   rouge : ce qui se fait là ne se rattrape pas, et l'écran doit le dire avant
+   qu'on lise le texte. */
+.a-effacer {
+  margin-top: 12px; padding: 12px; border-radius: 12px;
+  border: 1px solid rgb(var(--red-rgb) / .45);
+  background: rgb(var(--red-rgb) / .07);
+  display: grid; gap: 10px;
+}
+.a-effacer__quoi { margin: 0; font-weight: 700; font-size: 13px; }
+
+.a-client__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.a-client__actions .a-btn { flex: 1 1 auto; text-align: center; text-decoration: none; }
+.a-client__telegram { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; font-size: 13.5px; }
+.a-client__photo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-soft); }
+
+/* ── Joindre un client ─────────────────────────────────────
+   Un identifiant Telegram numérique ne se contacte pas depuis un
+   compte personnel : c'est le bot qui écrit. Le bloc met donc
+   l'identifiant en évidence — c'est l'adresse — et le message par
+   le bot en premier bouton. */
+.a-client__joindre { font-size: 13.5px; line-height: 1.45; }
+.a-client__id {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 0 6px !important; font-weight: 700;
+}
+.a-client__id code {
+  padding: 2px 8px; border-radius: 8px; font-size: 13px; font-weight: 800;
+  color: var(--neon); background: rgb(var(--neon-rgb) / .1);
+  border: 1px solid rgb(var(--neon-rgb) / .35);
+  user-select: all;  /* un appui long le sélectionne d'un bloc */
+}
+.a-btn--mince { padding: 4px 9px; font-size: 11.5px; border-radius: 9px; }
+.a-btn--ok { color: var(--neon); border-color: rgb(var(--neon-rgb) / .5); background: rgb(var(--neon-rgb) / .1); }
+.a-client__joindre-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.a-client__joindre-actions .a-btn { flex: 1 1 auto; text-align: center; text-decoration: none; }
+
+.a-compose { margin-top: 10px; }
+.a-compose__texte {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  padding: 10px 12px; border-radius: 12px;
+  font: inherit; font-size: 14px; color: var(--cream);
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--line-soft);
+}
+.a-compose__texte:focus { outline: none; border-color: rgb(var(--neon-rgb) / .5); }
+.a-compose__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.a-compose__etat { flex: 1 1 100%; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.a-compose__etat--ok { color: var(--neon); }
+.a-compose__etat--ko { color: var(--red); }
+
+.a-client__notes li { padding: 8px 0; border-top: 1px solid var(--viz-grille, rgb(234 255 242 / .12)); }
+.a-client__detail a[href^="tel:"] { color: var(--neon); text-decoration: none; font-weight: 800; }
+
+/* ── Avis ─────────────────────────────────────────────────
+   Les étoiles portent l'or, comme dans la boutique : le néon
+   veut dire « touche ici » partout ailleurs, et une note n'est
+   pas un bouton. */
+.a-avisstat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; }
+.a-avisstat .a-kpi__value { color: var(--gold); }
+.a-kpi__hint { display: block; margin-top: 2px; font-size: 11px; font-weight: 700; color: var(--muted); }
+
+/* Une ligne par produit noté : la moyenne, et de quoi elle est faite. */
+.a-noteligne {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 11px 0; border-top: 1px solid var(--line-soft);
+}
+.a-noteligne:first-child { border-top: 0; }
+.a-noteligne__tete { flex: 1; min-width: 0; }
+.a-noteligne__nom { display: block; font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.a-noteligne__note { display: block; margin-top: 2px; font-size: 13px; color: var(--gold); letter-spacing: .05em; }
+.a-noteligne__note b { font-weight: 800; }
+.a-noteligne__note small { color: var(--muted); font-weight: 700; letter-spacing: 0; }
+
+/* Les cinq barres, de 5★ à 1★ : la forme dit tout de suite si les notes
+   sont groupées en haut ou étalées. */
+.a-noteligne__barres { flex: none; display: flex; align-items: flex-end; gap: 3px; height: 34px; }
+.a-noteligne__barre {
+  display: flex; align-items: flex-end; width: 8px; height: 100%;
+  background: rgb(var(--cream-rgb) / .07); border-radius: 3px; overflow: hidden;
+}
+.a-noteligne__barre span { width: 100%; background: rgb(var(--gold-rgb) / .75); border-radius: 3px; }
+
+.a-avis {
+  padding: 14px; margin-bottom: 10px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+}
+.a-avis--masque { opacity: .58; }
+.a-avis__tete { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.a-avis__etoiles { color: var(--gold); font-size: 14px; letter-spacing: .06em; }
+.a-avis__produit { font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.a-avis__quand { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.a-avis__qui { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--muted); }
+.a-avis__texte { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; }
+.a-avis__reponse {
+  margin-top: 9px; padding: 9px 11px; border-radius: 12px;
+  background: rgb(var(--neon-rgb) / .07); border-left: 2px solid rgb(var(--neon-rgb) / .5);
+  font-size: 13px; line-height: 1.45;
+}
+.a-avis__reponse b { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--neon); }
+.a-avis__reponse p { margin: 3px 0 0; }
+.a-avis__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.a-avis__actions .a-btn { flex: 1 1 auto; text-align: center; }
+/* La corbeille n'a pas à occuper un tiers de la rangée : c'est le geste
+   qu'on fait le moins, et celui qu'on ne veut pas faire par erreur. */
+.a-avis__actions .a-btn--danger { flex: 0 0 auto; }
+
+/* ── Audience ─────────────────────────────────────────────
+   Qui on peut encore prévenir, et sur quel canal. La barre dit
+   d'un coup d'œil si un canal s'est vidé — ce qu'un pourcentage
+   seul ne montre pas. */
+.a-audience {
+  padding: 14px; margin-bottom: 14px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+}
+.a-audience .a-client__h3:first-child { margin-top: 0; }
+.a-canal { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.a-canal__nom { flex: 0 0 8.5rem; font-size: 13px; font-weight: 800; }
+.a-canal__piste {
+  flex: 1; height: 7px; border-radius: 999px; overflow: hidden;
+  background: rgb(var(--cream-rgb) / .08);
+}
+.a-canal__piste span { display: block; height: 100%; background: rgb(var(--neon-rgb) / .65); }
+.a-canal__chiffre { flex: none; font-size: 13px; font-weight: 800; }
+.a-canal__chiffre small { color: var(--muted); font-weight: 700; }
+
+/* Le format auquel un média est rattaché, sous son adresse. */
+.a-media__format {
+  margin-top: 6px; width: 100%; max-width: 12rem;
+  padding: 5px 9px; border-radius: 9px;
+  font: inherit; font-size: 12px; font-weight: 700;
+  color: var(--cream); background: rgb(var(--cream-rgb) / .06);
+  border: 1px solid var(--line-soft);
+}
+.a-media__format:disabled { opacity: .5; }
+
+/* ── Présence ─────────────────────────────────────────────
+   « Actif », jamais « en ligne » : Telegram ne donne pas le
+   statut en ligne aux bots, et le bandeau ne doit pas laisser
+   croire le contraire. */
+.a-presence {
+  margin: 0 16px 12px; padding: 11px 13px; border-radius: 14px;
+  background: linear-gradient(180deg, rgb(var(--neon-rgb) / .14), rgb(var(--neon-rgb) / .05));
+  border: 1px solid rgb(var(--neon-rgb) / .38);
+}
+.a-presence__tete { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.a-presence__tete b { font-size: 15px; font-weight: 800; }
+.a-presence__quoi { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+
+/* Le pouls : il dit que le chiffre est vivant, pas figé depuis ce matin. */
+.a-presence__pouls {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--neon); box-shadow: 0 0 0 0 rgb(var(--neon-rgb) / .6);
+  animation: pouls 2s ease-out infinite;
+}
+@keyframes pouls {
+  70% { box-shadow: 0 0 0 9px rgb(var(--neon-rgb) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--neon-rgb) / 0); }
+}
+@media (prefers-reduced-motion: reduce) { .a-presence__pouls { animation: none; } }
+
+.a-presence__gens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.a-present {
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 800;
+  color: var(--cream); background: rgb(var(--cream-rgb) / .08);
+  border: 1px solid var(--line-soft);
+}
+.a-present--chat { color: var(--neon); border-color: rgb(var(--neon-rgb) / .45); }
+
+/* La pastille sur une fiche : discrète, à gauche du nom. */
+.a-client.est-actif .a-client__qui::before {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;
+  background: var(--neon); box-shadow: 0 0 6px rgb(var(--neon-rgb) / .8);
+}
+
+/* La traîne des trente minutes. Celui qui est encore là porte la couleur ;
+   celui qui vient de partir reste lisible mais s'efface — la différence doit
+   se voir sans avoir à lire la durée. */
+.a-presence__sur { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.a-presence__quoi small { font-weight: 700; opacity: .75; }
+.a-present { display: inline-flex; align-items: baseline; gap: 5px; opacity: .62; }
+.a-present small { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+.a-present b { font-size: 10.5px; font-weight: 800; color: var(--neon); }
+.a-present--ici {
+  opacity: 1; color: var(--cream);
+  background: rgb(var(--neon-rgb) / .14); border-color: rgb(var(--neon-rgb) / .5);
+}
+.a-present--ici small { color: var(--neon); }
+
+/* ── La playlist d'ambiance ──────────────────────────────────
+   Une ligne par morceau : son rang, son titre modifiable, et trois gestes.
+   Le réordonnancement se fait par flèches et non par glisser-déposer — sur
+   un téléphone, un glisser dans une liste qui défile attrape le défilement
+   une fois sur deux, et on croit avoir déplacé ce qui n'a pas bougé. */
+.a-musique { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+.a-musique__ligne {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; border-radius: 11px;
+  background: rgb(var(--night-rgb) / .45);
+  border: 1px solid var(--line-soft);
+}
+.a-musique__rang {
+  flex: none; width: 20px; text-align: center;
+  font-size: 12px; font-weight: 800; color: var(--muted);
+}
+.a-musique__titre {
+  flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px;
+  font: inherit; font-size: 13px; color: var(--cream);
+  background: rgb(var(--night-rgb) / .6);
+  border: 1px solid var(--line-soft);
+}
+.a-musique__geste {
+  flex: none; width: 30px; height: 30px; padding: 0; border-radius: 8px;
+  cursor: pointer; font-size: 14px; line-height: 1;
+  color: var(--cream); background: rgb(255 255 255 / .06);
+  border: 1px solid var(--line-soft);
+}
+.a-musique__geste[disabled] { opacity: .3; cursor: default; }
+.a-musique__geste--oter { color: var(--red); }
+
+/* ── Les deux gestes d'urgence ───────────────────────────────
+   En tête du tableau de bord, côte à côte, assez grands pour être touchés
+   sans viser. On ne cherche pas ces boutons-là : on les veut sous le pouce
+   à la seconde où l'écran s'ouvre. */
+.a-urgence {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  margin: 0 0 16px;
+}
+.a-gros {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  min-height: 74px; padding: 12px 13px; border-radius: 14px;
+  cursor: pointer; text-align: left;
+  color: var(--cream);
+  background: rgb(var(--panel-rgb) / .55);
+  border: 1px solid var(--line-soft);
+  transition: transform .12s ease, background .16s ease, border-color .16s ease;
+}
+.a-gros:active { transform: scale(.98); }
+.a-gros[disabled] { opacity: .5; cursor: default; }
+.a-gros__titre { font-size: 15px; font-weight: 800; letter-spacing: .01em; }
+.a-gros__dit {
+  font-size: 11.5px; font-weight: 600; line-height: 1.3;
+  color: var(--muted);
+}
+
+/* Au repos, les deux boutons se ressemblent : rien d'anormal ne se passe,
+   et un écran de bord qui crie en permanence n'apprend plus rien. C'est
+   l'état actif qui parle — et il parle fort, parce qu'oublier un rideau
+   baissé coûte une journée de commandes. */
+.a-gros--rideau.a-gros--actif {
+  color: #fff;
+  background: rgb(var(--red-rgb) / .22);
+  border-color: rgb(var(--red-rgb) / .75);
+  box-shadow: 0 0 0 1px rgb(var(--red-rgb) / .35), 0 0 18px rgb(var(--red-rgb) / .2);
+}
+.a-gros--rideau.a-gros--actif .a-gros__dit { color: rgb(255 255 255 / .85); }
+.a-gros--porte.a-gros--actif {
+  background: rgb(var(--gold-rgb) / .18);
+  border-color: rgb(var(--gold-rgb) / .65);
+}
+.a-gros--porte.a-gros--actif .a-gros__dit { color: rgb(var(--cream-rgb) / .8); }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-gros { transition: none; }
+}
+
+/* L'écran « à ouvrir depuis Telegram ». Le rideau d'accès ne portait
+   qu'une ligne : quand elle disait « initData manquant », elle flottait
+   seule au milieu du noir et ressemblait à une panne. */
+.a-gate__titre {
+  margin: 0 0 10px; font-size: 19px; font-weight: 800;
+  color: var(--cream, #f0f0f0);
+}
+.a-gate__aide {
+  margin: 12px 0 0; font-size: 13px; line-height: 1.55;
+  opacity: .72; max-width: 34ch;
+}
+.a-gate__card { max-width: 36ch; text-align: center; }

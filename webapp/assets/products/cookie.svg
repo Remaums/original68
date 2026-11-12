@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" role="img" aria-label="Brownie">
+  <defs><linearGradient id="bro-top" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8A5A32"/><stop offset="1" stop-color="#5A3418"/>
+    </linearGradient><linearGradient id="bro-side" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#3A2110"/><stop offset="1" stop-color="#1E1108"/>
+    </linearGradient></defs>
+  <g>
+    <rect x="58" y="76" width="124" height="58" rx="12" fill="url(#bro-side)"/>
+    <rect x="58" y="56" width="124" height="58" rx="12" fill="url(#bro-top)"/>
+    <g fill="#2A160A" opacity=".55">
+      <circle cx="90" cy="80" r="6"/><circle cx="128" cy="72" r="5"/>
+      <circle cx="156" cy="94" r="5.5"/><circle cx="106" cy="100" r="5"/>
+      <circle cx="146" cy="66" r="3.5"/>
+    </g>
+    <path d="M72,68 q20,-8 38,2" stroke="#fff" stroke-opacity=".16" stroke-width="5"
+      stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

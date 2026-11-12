@@ -1,0 +1,554 @@
+/**
+ * Le bot nourri de vraies mises à jour Telegram.
+ *
+ * Les autres suites appellent l'API HTTP ; celle-ci passe par la porte que
+ * franchit un message réel, avec ses entités de commande, et intercepte tout
+ * ce que le bot voudrait envoyer. On y vérifie surtout qui a le droit de quoi
+ * — un bouton de statut est une surface d'attaque comme une autre.
+ *
+ * Aucun appel réseau : l'API sortante est remplacée.
+ *
+ * Usage :  BOT_TOKEN=… node test/telegram.test.mjs
+ */
+import 'dotenv/config';
+
+if (!process.env.BOT_TOKEN) {
+  console.error('BOT_TOKEN manquant : renseigne .env avant de lancer les tests.');
+  process.exit(1);
+}
+
+const ADMIN_ID = Number((process.env.ADMIN_IDS ?? '424242').split(',')[0].trim());
+
+const { bot, configurerMenu, configurerLesCommandes } = await import('../server/bot.js');
+const { config } = await import('../server/config.js');
+const { createOrder, getOrder } = await import('../server/orders.js');
+const { getCatalog, removeProductMedia } = await import('../server/catalog.js');
+const { getSettings, saveSettings } = await import('../server/settings.js');
+const { ouvrirLaPorte } = await import('../server/bot-captcha.js');
+
+let failures = 0;
+const check = (label, ok, detail = '') => {
+  console.log(`${ok ? 'OK   ' : 'ÉCHEC'}  ${label}${detail ? `  (${detail})` : ''}`);
+  if (!ok) failures++;
+};
+
+/* ── Un Telegram de façade ───────────────────────────────── */
+
+let envois = [];
+bot.api.config.use(async (prev, method, payload) => {
+  envois.push({ method, payload });
+  if (method === 'getMe') {
+    return { ok: true, result: { id: 1, is_bot: true, first_name: 'Bot', username: 'testbot' } };
+  }
+  return { ok: true, result: { message_id: 1, date: 0, chat: { id: payload?.chat_id ?? 0, type: 'private' } } };
+});
+
+bot.botInfo = {
+  id: 1, is_bot: true, first_name: 'Bot', username: 'testbot',
+  can_join_groups: false, can_read_all_group_messages: false, supports_inline_queries: false,
+  can_connect_to_business_account: false, has_main_web_app: false,
+};
+await bot.init();
+
+let compteur = 1000;
+
+/** Telegram marque les commandes par une entité : sans elle, aucun
+ *  `bot.command` ne se déclenche et le test passerait à côté de tout. */
+const message = (from, text, extra = {}) => {
+  const entities = typeof text === 'string' && text.startsWith('/')
+    ? [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }]
+    : undefined;
+  return {
+    update_id: compteur++,
+    message: {
+      message_id: compteur, date: Math.floor(Date.now() / 1000),
+      chat: { id: from.id, type: 'private' }, from, text, entities, ...extra,
+    },
+  };
+};
+
+const callback = (from, data) => ({
+  update_id: compteur++,
+  callback_query: {
+    id: String(compteur), from, chat_instance: 'x', data,
+    message: {
+      message_id: compteur, date: Math.floor(Date.now() / 1000),
+      chat: { id: from.id, type: 'private' }, from, text: 'ancien',
+    },
+  },
+});
+
+const ADMIN = { id: ADMIN_ID, is_bot: false, first_name: 'Patron' };
+const CLIENT = { id: 777001, is_bot: false, first_name: 'Client' };
+
+// Le bot pose un petit calcul au premier contact, et il répond avant tout le
+// reste. Cette suite teste ce que le bot dit à un client — pas la porte : sans
+// ce passage, chaque commande reçoit l'épreuve au lieu de la réponse attendue.
+// Le magasin est le même processus qu'ici, donc l'ouverture est vue tout de
+// suite, sans aller-retour par le serveur.
+await ouvrirLaPorte(CLIENT.id);
+
+const jouer = async (update) => {
+  envois = [];
+  await bot.handleUpdate(update);
+  return envois;
+};
+const dit = (e) => e.map((x) => x.payload?.text ?? x.payload?.caption ?? '').join(' | ');
+
+// L'accueil se reconnaît à sa marque, pas à un mot de sa phrase : « 🌿 * »
+// n'est envoyé que par lui dans tout le bot, et il survit à une réécriture
+// du texte. Ancrées sur un mot du message, ces épreuves tombaient dès que le
+// vendeur faisait retoucher son accueil — ce qu'il vient justement de faire.
+const accueilli = (texte) => /🌿 \*/.test(String(texte));
+
+
+/* ── Ce qui est ouvert à tous ────────────────────────────── */
+
+await saveSettings({ features: { orderHistory: true, photos: true, verification: false } });
+
+for (const cmd of ['/start', '/boutique']) {
+  const e = await jouer(message(CLIENT, cmd));
+  check(`${cmd} répond`, e.length > 0, dit(e).slice(0, 40));
+}
+
+/* ── Le message d'accueil, tel que Telegram le recevra ──── */
+
+// Trois façons de casser ce message sans que rien ne le dise :
+//
+//  - un caractère réservé non échappé, et Telegram refuse le message ENTIER.
+//    /start ne répond alors plus rien du tout, et le journal est muet ;
+//  - les balises HTML du dictionnaire parties telles quelles : la Mini App
+//    les interprète, Telegram les affiche. Le client lit « <strong> » ;
+//  - la phrase recopiée au lieu d'être reprise, et les deux divergent.
+{
+  const e = await jouer(message(CLIENT, '/start'));
+  const envoi = e.find((x) => x.payload?.text && accueilli(x.payload.text));
+  const texte = envoi?.payload?.text ?? '';
+
+  check("L'accueil part bien", Boolean(envoi), dit(e).slice(0, 40));
+  check('En MarkdownV2', envoi?.payload?.parse_mode === 'MarkdownV2', envoi?.payload?.parse_mode);
+
+  // Hors des passages en code, tout caractère réservé doit porter sa barre.
+  const horsCode = texte.replace(/`[^`]*`/g, '');
+  const nus = [...horsCode.matchAll(/(^|[^\\])([_\[\]()~>#+\-=|{}.!])/g)].map((m) => m[2]);
+  check('Aucun caractère réservé laissé nu',
+    nus.length === 0, nus.length ? [...new Set(nus)].join(' ') : 'aucun');
+
+  check("Aucune balise HTML n'a fui du dictionnaire",
+    !/<\/?[a-z]+>/i.test(texte), (texte.match(/<\/?[a-z]+>/i) ?? [''])[0]);
+  check('Le gras est bien du gras Telegram', /\*[^*]+\*/.test(texte));
+
+  // Reprise et non recopiée : la phrase du cadre d'accueil de la Mini App,
+  // ses balises devenues des astérisques, doit se retrouver ici mot pour mot.
+  const { TEXTES } = await import('../webapp/js/langues.js');
+  const attendu = String(TEXTES.fr['accueil.texte'])
+    .replace(/<\/?strong>/g, '')
+    .split('{boutique}')[1]
+    .trim();
+  const lu = texte.replace(/\\(.)/g, '$1').replace(/\*/g, '');
+  check("C'est la phrase du cadre d'accueil, pas une copie",
+    lu.includes(attendu), attendu.slice(0, 50));
+}
+
+/* ── Ce qu'un client ne doit PAS pouvoir lire ────────────── */
+
+// `/aide` listait toutes les commandes, y compris celles du vendeur, à qui
+// les demandait. Une liste affichée à un acheteur lui apprend surtout qu'il
+// en existe d'autres : il essaie `/annonce`, se fait refuser, et le refus
+// lui confirme qu'elles existent. La commande n'existe plus ; ce qui reste
+// est la réponse fourre-tout, et elle ne doit nommer aucune commande
+// réservée.
+{
+  const e = await jouer(message(CLIENT, '/aide'));
+  const texte = dit(e);
+  check('/aide ne liste plus les commandes', !/\/annonce|\/addadmin|\/enligne|\/verification/.test(texte),
+    texte.slice(0, 60));
+  check("Et n'annonce pas d'espace administrateur", !/administrateur/i.test(texte), texte.slice(0, 60));
+  // Et elle ne part pas non plus dans la conversation du vendeur : une
+  // commande inconnue n'est pas une question de client.
+  check("Elle n'est pas relayée au vendeur",
+    !e.some((x) => String(x.payload?.chat_id) === String(ADMIN_ID) && /\/aide/.test(x.payload?.text ?? '')),
+    e.map((x) => `${x.payload?.chat_id}`).join(' '));
+}
+
+/* ── Le menu « / » de Telegram ───────────────────────────── */
+
+// Ce n'est pas un détail d'affichage : c'est Telegram lui-même qui propose
+// la liste des commandes à chaque client. Vide pour tout le monde, garnie
+// pour les seuls administrateurs, sur la portée qui l'emporte.
+{
+  envois = [];
+  const bilan = await configurerLesCommandes();
+  const poses = envois.filter((e) => e.method === 'setMyCommands');
+  const pourTous = poses.find((e) => e.payload?.scope?.type === 'all_private_chats');
+  const pourLePatron = poses.find(
+    (e) => e.payload?.scope?.type === 'chat' && String(e.payload.scope.chat_id) === String(ADMIN_ID)
+  );
+  check('Une liste vide est posée pour tous les clients',
+    Array.isArray(pourTous?.payload?.commands) && pourTous.payload.commands.length === 0,
+    JSON.stringify(pourTous?.payload?.commands));
+  check('Et la liste du vendeur est posée sur sa seule conversation',
+    (pourLePatron?.payload?.commands?.length ?? 0) > 0,
+    (pourLePatron?.payload?.commands ?? []).map((c) => c.command).join(' '));
+  check("Aucune commande réservée n'est publiée à tous",
+    !(pourTous?.payload?.commands ?? []).length, String(bilan.caches));
+}
+
+/* ── Ce qui est réservé ──────────────────────────────────── */
+
+for (const cmd of ['/admin', '/ouvrir', '/fermer', '/verification on']) {
+  const e = await jouer(message(CLIENT, cmd));
+  check(`${cmd} est refusé à un client`, /réservé/i.test(dit(e)), dit(e).slice(0, 50));
+}
+
+/* ── Les interrupteurs du bot ────────────────────────────── */
+
+await jouer(message(ADMIN, '/fermer'));
+check('/fermer ferme la boutique', (await getSettings()).opening.open === false);
+await jouer(message(ADMIN, '/ouvrir'));
+check('/ouvrir la rouvre', (await getSettings()).opening.open === true);
+
+await jouer(message(ADMIN, '/verification on'));
+check('/verification on allume la vérification', (await getSettings()).features.verification === true);
+await jouer(message(ADMIN, '/verification off'));
+check('/verification off l\'éteint', (await getSettings()).features.verification === false);
+
+let e = await jouer(message(ADMIN, '/verification nawak'));
+check('Un argument farfelu obtient une explication', dit(e).length > 0, dit(e).slice(0, 50));
+
+/* ── Les boutons de statut ───────────────────────────────── */
+
+const commande = await createOrder({
+  user: { id: CLIENT.id, first_name: 'Client' },
+  items: [{ id: 'x', name: 'Test', variantId: null, variantLabel: null, unitPrice: 1000, quantity: 1, lineTotal: 1000 }],
+  subtotal: 1000, total: 1000, mode: 'pickup',
+});
+
+e = await jouer(callback(CLIENT, `st:${commande.reference}:confirmee`));
+check('Un client ne change pas un statut',
+  /réservé/i.test(e.find((x) => x.method === 'answerCallbackQuery')?.payload?.text ?? ''));
+check('Et le statut n\'a pas bougé', (await getOrder(commande.reference)).status === 'nouvelle');
+
+await jouer(callback(ADMIN, `st:${commande.reference}:confirmee`));
+check('L\'administrateur, lui, le change', (await getOrder(commande.reference)).status === 'confirmee');
+
+// De « confirmée » à « livrée » sans passer par « prête » : interdit.
+await jouer(callback(ADMIN, `st:${commande.reference}:livree`));
+check('Une transition interdite est refusée',
+  (await getOrder(commande.reference)).status === 'confirmee');
+
+e = await jouer(callback(ADMIN, 'st:O68-INEXISTANT:confirmee'));
+check('Une référence inconnue ne fait pas planter le bot',
+  Boolean(e.find((x) => x.method === 'answerCallbackQuery')));
+
+e = await jouer(callback(ADMIN, `st:${commande.reference}:nimportequoi`));
+check('Un statut inventé non plus', e.length > 0, dit(e).slice(0, 40));
+
+/* ── Les images ──────────────────────────────────────────── */
+
+const photo = { photo: [{ file_id: 'AgACfake', file_unique_id: 'u', width: 100, height: 100 }] };
+
+e = await jouer(message(ADMIN, undefined, { ...photo, caption: '' }));
+check('Photo sans légende : le bot explique', /légende/i.test(dit(e)), dit(e).slice(0, 45));
+
+e = await jouer(message(ADMIN, undefined, { ...photo, caption: 'produit qui n existe pas' }));
+check('Légende sans correspondance : le bot liste', /correspond/i.test(dit(e)), dit(e).slice(0, 45));
+
+e = await jouer(message(CLIENT, undefined, photo));
+check('Pièce envoyée alors que la vérification est coupée : le bot le dit',
+  /identité/i.test(dit(e)), dit(e).slice(0, 60));
+
+await saveSettings({ features: { photos: false } });
+e = await jouer(message(ADMIN, undefined, { ...photo, caption: 'Dry Sift 68' }));
+check('Photos coupées : le bot le dit à l\'administrateur', /désactiv/i.test(dit(e)), dit(e).slice(0, 50));
+await saveSettings({ features: { photos: true } });
+
+/* ── La porte du bot ─────────────────────────────────────── */
+
+// Un péage, pas une énigme : un robot sait additionner. Ce qu'on vérifie, ce
+// sont les trois choses qui font la différence entre une porte et un
+// tourniquet — la réponse ne sort jamais du serveur, un mauvais bouton fait
+// changer le calcul, et l'insistance coûte une attente.
+{
+  const { oublier, estPasse } = await import('../server/bot-captcha.js');
+
+  // Le calcul est éteint d'origine : sur une boutique neuve, rien ne
+  // l'allume avant cette suite. On l'allume ici, et on rend à la fin la
+  // valeur trouvée, pour ne pas laisser l'épreuve à qui n'en voulait pas.
+  const calculAvant = (await getSettings()).features.botCaptcha;
+  await saveSettings({ features: { botCaptcha: true } });
+
+  // Un inconnu, jamais vu : les identifiants tirés au hasard rendent cette
+  // suite rejouable, un client d'une exécution passée étant déjà entré.
+  const INCONNU = { id: 900000 + Math.floor(Math.random() * 90000), is_bot: false, first_name: 'Passant' };
+  await oublier(INCONNU.id);
+
+  // On cherche le clavier dans TOUS les appels, pas seulement le premier.
+  // Après un bouton, Telegram reçoit d'abord un accusé sans clavier, et le
+  // message porteur des six réponses n'arrive qu'ensuite : ne lire que e[0]
+  // rendait une liste vide, qu'on pouvait alors comparer à n'importe quoi.
+  const boutons = (e) =>
+    ((e.find((x) => x?.payload?.reply_markup?.inline_keyboard)
+      ?.payload?.reply_markup?.inline_keyboard) ?? []).flat().map((b) => b.callback_data);
+
+  e = await jouer(message(INCONNU, '/start'));
+  check('Un inconnu tombe sur un calcul', /Combien font/.test(dit(e)), dit(e).slice(0, 60));
+  check("Et pas sur l'accueil", !accueilli(dit(e)));
+  let choix = boutons(e).map((d) => Number(d.split(':')[1]));
+  check('Six réponses sont proposées', choix.length === 6, choix.join(' '));
+
+  // La bonne réponse ne doit se lire nulle part : ni dans le texte, ni dans
+  // les boutons autrement que noyée parmi les autres.
+  const enonce = dit(e).match(/Combien font (\d+) ([+−]) (\d+)/);
+  const attendu = enonce[2] === '+' ? Number(enonce[1]) + Number(enonce[3]) : Number(enonce[1]) - Number(enonce[3]);
+  check('La réponse est parmi les boutons', choix.includes(attendu), `${attendu} dans ${choix.join(' ')}`);
+  check("Elle n'est pas écrite dans le message",
+    !new RegExp(`= ?${attendu}\\b`).test(dit(e)));
+
+  // Tant que la porte n'est pas franchie, rien d'autre ne s'ouvre.
+  e = await jouer(message(INCONNU, '/boutique'));
+  check('Le catalogue reste fermé entre-temps', !/catalogue/i.test(dit(e)), dit(e).slice(0, 40));
+  check('Et le calcul ne change pas entre deux messages', /Combien font/.test(dit(e)));
+  const memeEnonce = dit(e).match(/Combien font (\d+) ([+−]) (\d+)/);
+  check("La même épreuve est reposée telle quelle",
+    memeEnonce[0] === enonce[0], `${enonce[0]} puis ${memeEnonce[0]}`);
+
+  // Un mauvais bouton fait tirer un autre calcul : sinon il suffirait
+  // d'essayer les six l'un après l'autre.
+  const faux = choix.find((v) => v !== attendu);
+  e = await jouer(callback(INCONNU, `cap:${faux}`));
+  check('Une mauvaise réponse est refusée', /pas ça/i.test(dit(e)), dit(e).slice(0, 40));
+  check('Et il reste des essais', /2 essais/.test(dit(e)), dit(e).slice(0, 60));
+  const apresErreur = dit(e).match(/Combien font (\d+) ([+−]) (\d+)/);
+  // On compare le tirage entier — énoncé ET ordre des six boutons — et non le
+  // seul énoncé. Il n'y a qu'une centaine d'énoncés possibles : deux tirages
+  // successifs retombent sur le même environ une fois sur cinquante, et le
+  // test échouait alors sans qu'aucune règle soit enfreinte. Le mélange des
+  // boutons, lui, ajoute 720 possibilités : un tirage vraiment refait se
+  // distingue du précédent à coup sûr en pratique, et un calcul reposé tel
+  // quel — ce que le test cherche à interdire — reste détecté, puisqu'il
+  // arriverait avec ses boutons inchangés.
+  const tirage = (enonceLu, boutonsLus) => `${enonceLu[0]} | ${boutonsLus.join(',')}`;
+  check('Un nouveau calcul est tiré',
+    tirage(apresErreur, boutons(e).map((d) => Number(d.split(':')[1]))) !== tirage(enonce, choix),
+    `${enonce[0]} → ${apresErreur[0]}`);
+  check("La porte est toujours fermée", (await estPasse(INCONNU.id)) === false);
+
+  // Trois erreurs valent une attente : c'est ce qui rend l'essai systématique
+  // plus cher que le renoncement.
+  let courant = apresErreur;
+  for (let i = 0; i < 2; i++) {
+    const juste = courant[2] === '+' ? Number(courant[1]) + Number(courant[3]) : Number(courant[1]) - Number(courant[3]);
+    e = await jouer(callback(INCONNU, `cap:${juste + 1}`));
+    courant = dit(e).match(/Combien font (\d+) ([+−]) (\d+)/) ?? courant;
+  }
+  check('Trois erreurs ferment la porte un moment', /Réessaie dans \d+ minute/.test(dit(e)), dit(e).slice(0, 50));
+
+  e = await jouer(message(INCONNU, '/start'));
+  check("Pendant l'attente, aucun calcul n'est reposé", !/Combien font/.test(dit(e)), dit(e).slice(0, 50));
+  check("Et l'attente est annoncée", /Réessaie dans/.test(dit(e)));
+
+  // On repart d'une porte neuve pour la suite : la réponse écrite plutôt que
+  // touchée doit marcher aussi — un client qui tape « 12 » ne se trompe pas.
+  await oublier(INCONNU.id);
+  e = await jouer(message(INCONNU, '/start'));
+  const dernier = dit(e).match(/Combien font (\d+) ([+−]) (\d+)/);
+  const bonne = dernier[2] === '+' ? Number(dernier[1]) + Number(dernier[3]) : Number(dernier[1]) - Number(dernier[3]);
+
+  e = await jouer(message(INCONNU, String(bonne)));
+  check('Une réponse écrite ouvre aussi la porte', accueilli(dit(e)), dit(e).slice(0, 45));
+  check('Et la porte reste ouverte', (await estPasse(INCONNU.id)) === true);
+
+  e = await jouer(message(INCONNU, '/start'));
+  check("On ne redemande jamais deux fois", !/Combien font/.test(dit(e)) && accueilli(dit(e)));
+
+  // Le vendeur n'a pas à se justifier auprès de sa propre boutique.
+  e = await jouer(message(ADMIN, '/start'));
+  check("L'administrateur n'est jamais interrogé", !/Combien font/.test(dit(e)));
+
+  // Un client qui a déjà commandé non plus : le prendre pour un inconnu
+  // serait lui faire payer une porte qu'il a déjà franchie.
+  const ANCIEN = { id: 950000 + Math.floor(Math.random() * 40000), is_bot: false, first_name: 'Fidele' };
+  await oublier(ANCIEN.id);
+  await createOrder({
+    user: { id: ANCIEN.id, first_name: 'Fidele' },
+    items: [{ id: 'x', name: 'Test', variantId: null, variantLabel: null, unitPrice: 1000, quantity: 1, lineTotal: 1000 }],
+    subtotal: 1000, total: 1000, mode: 'pickup',
+  });
+  e = await jouer(message(ANCIEN, '/start'));
+  check("Un client qui a déjà commandé entre sans rien prouver",
+    !/Combien font/.test(dit(e)) && accueilli(dit(e)), dit(e).slice(0, 40));
+
+  // `/admin` reste ouvert : c'est par lui qu'un vendeur qui vient d'installer
+  // sa boutique découvre son identifiant Telegram. Lui opposer un calcul le
+  // laisserait devant une porte dont il cherche justement la clé.
+  const NOUVEAU = { id: 940000 + Math.floor(Math.random() * 10000), is_bot: false, first_name: 'Vendeur' };
+  await oublier(NOUVEAU.id);
+  e = await jouer(message(NOUVEAU, '/admin'));
+  check("/admin répond son mode d'emploi même à un inconnu",
+    /identifiant/i.test(dit(e)) && !/Combien font/.test(dit(e)), dit(e).slice(0, 45));
+
+  // Une commande passée depuis la Mini App vaut mieux qu'un calcul : elle est
+  // signée par Telegram. Le message de confirmation ne doit pas se heurter à
+  // une épreuve, sinon le client verrait un calcul pour toute réponse à sa
+  // commande.
+  const ACHETEUR = { id: 970000 + Math.floor(Math.random() * 20000), is_bot: false, first_name: 'Acheteur' };
+  await oublier(ACHETEUR.id);
+  e = await jouer(message(ACHETEUR, undefined, { web_app_data: { button_text: 'x', data: '{"reference":"O68-TEST"}' } }));
+  check("Une commande envoyée depuis la Mini App passe la porte",
+    /bien reçue/.test(dit(e)), dit(e).slice(0, 45));
+  check('Et la porte lui reste ouverte', (await estPasse(ACHETEUR.id)) === true);
+
+  // L'interrupteur ferme la porte pour de bon.
+  const AUTRE = { id: 960000 + Math.floor(Math.random() * 30000), is_bot: false, first_name: 'Autre' };
+  await saveSettings({ features: { botCaptcha: false } });
+  e = await jouer(message(AUTRE, '/start'));
+  check("Épreuve coupée : plus personne n'est interrogé", !/Combien font/.test(dit(e)), dit(e).slice(0, 40));
+  await saveSettings({ features: { botCaptcha: calculAvant } });
+}
+
+/* ── La vignette d'une vidéo ─────────────────────────────── */
+
+// Telegram fabrique une petite image pour chaque vidéo qu'on lui confie. Elle
+// vaut quelques kilo-octets contre quelques mégaoctets : c'est elle qui
+// s'affiche pendant que la vidéo arrive, et sans elle la carte reste vide.
+const laVideo = (vignette) => ({
+  video: {
+    file_id: `BAAC-${Math.random().toString(36).slice(2)}`,
+    file_unique_id: 'v',
+    width: 320,
+    height: 240,
+    duration: 3,
+    file_size: 4096,
+    ...vignette,
+  },
+  caption: 'Dry Sift 68',
+});
+
+const galerieDe = async () => {
+  const p = (await getCatalog({ includeHidden: true })).products.find((x) => x.name === 'Dry Sift 68');
+  return { id: p.id, media: p.media ?? [] };
+};
+
+const auDepart = (await galerieDe()).media.length;
+
+e = await jouer(message(ADMIN, undefined, laVideo({ thumbnail: { file_id: 'AAQ-vignette', file_unique_id: 't' } })));
+check('Une vidéo envoyée au bot entre dans la galerie', /ajout/i.test(dit(e)), dit(e).slice(0, 40));
+let galerie = await galerieDe();
+check('Et sa vignette est gardée avec elle', galerie.media.at(-1)?.thumbFileId === 'AAQ-vignette',
+  JSON.stringify(galerie.media.at(-1)));
+
+// `thumb` était son nom avant Bot API 7.0 : un serveur auto-hébergé plus
+// ancien répond encore comme ça, et la vignette ne doit pas se perdre.
+await jouer(message(ADMIN, undefined, laVideo({ thumb: { file_id: 'AAQ-ancienne', file_unique_id: 't' } })));
+galerie = await galerieDe();
+check('L\'ancien nom du champ est compris aussi', galerie.media.at(-1)?.thumbFileId === 'AAQ-ancienne');
+
+// Une vidéo sans vignette ne doit pas en inventer une.
+await jouer(message(ADMIN, undefined, laVideo({})));
+galerie = await galerieDe();
+check("Une vidéo sans vignette n'en invente pas", galerie.media.at(-1)?.thumbFileId === undefined);
+
+// On rend la galerie telle qu'on l'a trouvée.
+for (let i = galerie.media.length - 1; i >= auDepart; i--) await removeProductMedia(galerie.id, i);
+
+/* ── L'historique suit son interrupteur ──────────────────── */
+
+await saveSettings({ features: { orderHistory: false } });
+e = await jouer(message(CLIENT, '/commandes'));
+check('/commandes respecte l\'interrupteur « Mes commandes »', !new RegExp(config.orderPrefix).test(dit(e)), dit(e).slice(0, 50));
+
+await saveSettings({ features: { orderHistory: true } });
+e = await jouer(message(CLIENT, '/commandes'));
+check('Rallumé, il ressert l\'historique', new RegExp(`${config.orderPrefix}|pas encore`).test(dit(e)), dit(e).slice(0, 40));
+
+/* ── Tout le reste ───────────────────────────────────────── */
+
+for (const [label, texte] of [
+  ['un bonjour', 'bonjour'],
+  ['une commande inconnue', '/nawak'],
+  ['du HTML', '<img src=x onerror=alert(1)>'],
+  ['un pavé de 4000 caractères', 'a'.repeat(4000)],
+  ['des emoji seuls', '🌿🔥😀'],
+]) {
+  const envoyes = await jouer(message(CLIENT, texte));
+  check(`Le bot répond à ${label}`, envoyes.length > 0, dit(envoyes).slice(0, 35));
+}
+
+/* ── Le bouton du menu, en bas à gauche ──────────────────── */
+
+// Le bouton qui ouvre la boutique doit pointer sur WEBAPP_URL quand elle est
+// une adresse HTTPS valide, et retomber sur le menu par défaut sinon : un
+// lanceur cassé ferait un bouton que Telegram refuse d'ouvrir.
+{
+  const urlAvant = config.webappUrl;
+
+  config.webappUrl = 'https://boutique.example.com';
+  let vu = null;
+  // L'espion OBSERVE et laisse passer. Sa première version rendait un
+  // résultat sans rappeler `prev` : installée pour de bon, elle court-
+  // circuitait l'intercepteur qui remplit `envois`, et TOUT test ajouté
+  // après ce bloc ne capturait plus rien — le bot répondait, la suite ne
+  // le voyait pas. Un piège silencieux pour qui écrit la ligne suivante.
+  const espion = async (prev, method, payload, signal) => {
+    if (method === 'setChatMenuButton') vu = payload.menu_button;
+    return prev(method, payload, signal);
+  };
+  bot.api.config.use(espion);
+
+  await configurerMenu();
+  check('Le bouton de menu ouvre la boutique', vu?.type === 'web_app', vu?.type);
+  check('Sur la vraie URL', vu?.web_app?.url === 'https://boutique.example.com', vu?.web_app?.url);
+  // Le libellé porte l'enseigne, pas le mot « Boutique » : c'est ce que le
+  // client cherche des yeux en bas de l'écran. Repris des réglages, donc il
+  // suit un changement de nom — et borné, parce qu'un libellé trop long
+  // ferait refuser l'appel et le menu retomberait sur « Menu » en silence.
+  check("Il porte le nom de la boutique", vu?.text?.startsWith(config.shopName), vu?.text);
+  check('Et il tient dans ce que Telegram accepte', (vu?.text?.length ?? 99) <= 64,
+    `${vu?.text?.length} caractères`);
+
+  config.webappUrl = '';
+  await configurerMenu();
+  check('Sans URL valide, on repose le menu par défaut', vu?.type === 'default', vu?.type);
+
+  config.webappUrl = urlAvant;
+}
+
+/* ── /linkadmin : l'adresse du panneau, en clair ─────────── */
+
+console.log('\n── L adresse du panneau admin ──────────────────────');
+{
+  const urlAvant = config.webappUrl;
+
+  // Avec une barre oblique de fin — le cas le plus fréquent, l'adresse se
+  // recopiant depuis un navigateur. Elle ne doit pas se retrouver doublée.
+  config.webappUrl = 'https://boutique.example.com/';
+  let e = await jouer(message(ADMIN, '/linkadmin'));
+  check("L'adresse du panneau est rendue en clair",
+    /https:\/\/boutique\.example\.com\/admin\.html/.test(dit(e)), dit(e).slice(0, 70));
+  check('Sans double barre oblique', !/com\/\/admin/.test(dit(e)), dit(e).slice(0, 70));
+  check('Et le bouton Mini App est joint',
+    JSON.stringify(e.at(-1)?.payload?.reply_markup ?? {}).includes('admin.html'));
+  check("L'aperçu de lien est coupé",
+    e.at(-1)?.payload?.link_preview_options?.is_disabled === true,
+    JSON.stringify(e.at(-1)?.payload?.link_preview_options ?? 'absent'));
+  check('Le message dit qu il faut passer par Telegram',
+    /depuis telegram/i.test(dit(e)), dit(e).slice(-90));
+
+  // Un client ne doit RIEN obtenir : pas même un refus, qui apprendrait que
+  // la commande existe.
+  e = await jouer(message(CLIENT, '/linkadmin'));
+  check('Un client n obtient rien du tout', dit(e) === '', dit(e).slice(0, 60) || '(silence)');
+  check("Et surtout pas l'adresse", !/admin\.html/.test(JSON.stringify(e)));
+
+  // Sans URL configurée, on explique au lieu de rendre « undefined/admin.html ».
+  config.webappUrl = '';
+  e = await jouer(message(ADMIN, '/linkadmin'));
+  check('Sans WEBAPP_URL, on explique', /WEBAPP_URL/.test(dit(e)), dit(e).slice(0, 60));
+  check("Et aucune adresse bancale n'est servie", !/admin\.html/.test(dit(e)));
+
+  config.webappUrl = urlAvant;
+}
+
+console.log(`\n${failures ? `${failures} test(s) en échec` : 'Bot Telegram : OK'}`);
+process.exit(failures ? 1 : 0);

@@ -1,0 +1,4179 @@
+/* ══════════════════════════════════════════════════════════════
+   Espace admin — gestion du stock, des produits et des commandes
+   ══════════════════════════════════════════════════════════════ */
+
+const tg = window.Telegram?.WebApp;
+const LOW_STOCK = 5; // seuil d'alerte
+
+const state = {
+  currency: 'EUR',
+  statuses: {},
+  products: [],
+  categories: [],
+  orders: [],
+  stats: null,
+  bilan: null,       // le regroupement des commandes sur la période choisie
+  clients: [],       // fiches reconstituées à partir des commandes
+  clientsTotal: 0,
+  clientOuvert: null,
+  users: [],         // registre : tous ceux qui ont ouvert le bot
+  usersTotal: 0,
+  usersAcheteurs: 0,
+  usersCharge: false, // chargé à la première ouverture de l'onglet, pas avant
+  avis: [],           // les avis, du plus récent au plus ancien
+  avisResume: null,   // moyenne, total, masqués, notes par produit
+  avisFiltre: 'tous', // tous | basses | masques
+  avisCharges: false,
+  audience: null,     // qui accepte quoi, et ce qui est mis en favori
+  presence: null,     // qui est dans la boutique en ce moment
+  presents: new Set(),// leurs identifiants, pour peindre les pastilles
+  periode: 30,       // en jours ; commande tout le tableau de bord
+  settings: null,
+  verifications: [],
+  promos: [],
+  featureList: [],   // catalogue des interrupteurs, servi par le serveur
+  annonces: [],      // historique des annonces envoyées
+  tab: 'board',
+  orderFilter: '',
+  editing: null, // produit en cours d'édition, null = création
+};
+
+const $ = (id) => document.getElementById(id);
+
+init();
+
+/* ── Démarrage ───────────────────────────────────────────── */
+
+async function init() {
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    const night = themeHex('--night-rgb', '#04160f');
+    tg.setHeaderColor?.(night);
+    tg.setBackgroundColor?.(night);
+  }
+
+  bindHandlers();
+
+  // Sans la moindre signature, ce n'est pas un refus d'accès : c'est une
+  // page ouverte au mauvais endroit. Inutile d'interroger le serveur pour
+  // s'en apercevoir — il répondrait « initData manquant », et ce message
+  // technique s'affichait en blanc sur noir, seul au milieu d'un écran
+  // vide. Celui qui le lisait croyait à une panne de sa boutique.
+  if (!tg?.initData) {
+    ouvrirDepuisTelegram();
+    return;
+  }
+
+  try {
+    const session = await api('/session');
+    state.currency = session.currency;
+    state.statuses = session.statuses;
+    state.featureList = session.features ?? [];
+    state.mediaMax = session.mediaMax ?? 8;
+    state.musiqueMax = session.musiqueMax ?? 30;
+    $('adminName').textContent = session.user.first_name ?? 'Admin';
+    $('gate').hidden = true;
+  } catch (err) {
+    denyAccess(err.message);
+    return;
+  }
+
+  // Sans ce rattrapage, une panne de stockage laissait l'espace admin sur un
+  // écran à moitié peint, sans un mot : le seul endroit où l'explication
+  // aurait servi était justement celui qui ne l'affichait pas.
+  try {
+    await refreshAll();
+  } catch (err) {
+    denyAccess(err.message);
+  }
+}
+
+/**
+ * La page a été ouverte hors de Telegram — un navigateur, un favori, un
+ * lien recopié. Rien n'est cassé : il manque la signature que seul
+ * Telegram ajoute, et aucune réponse du serveur ne peut l'inventer. On le
+ * dit, et on dit surtout par où passer.
+ */
+function ouvrirDepuisTelegram() {
+  $('gate').hidden = false;
+  $('gateSpinner').hidden = true;
+  $('gateTitre').hidden = false;
+  $('gateTitre').textContent = '📱 À ouvrir depuis Telegram';
+  $('gateText').textContent =
+    "Ce panneau s'ouvre dans Telegram, pas dans un navigateur : il se signe "
+    + 'avec ton compte, et cette signature ne peut venir que de là.';
+  $('gateAide').hidden = false;
+  $('gateAide').textContent =
+    'Dans la conversation du bot, tape /admin puis appuie sur « Espace admin ». '
+    + "Ça marche aussi bien sur Telegram Bureau que sur ton téléphone.";
+}
+
+function denyAccess(message) {
+  const gate = $('gate');
+  // Le rideau est déjà levé quand la session a été acceptée : une panne
+  // survenue après — le stockage, par exemple — écrivait alors son message
+  // dans un élément masqué, et l'écran restait à moitié peint sans un mot.
+  gate.hidden = false;
+  gate.classList.add('a-gate--denied');
+  $('gateSpinner').hidden = true;
+  $('gateText').textContent = message;
+}
+
+function bindHandlers() {
+  for (const tab of document.querySelectorAll('.a-tab')) {
+    tab.addEventListener('click', () => selectTab(tab.dataset.tab));
+  }
+  suivreLaPresence();
+  $('refreshBtn').addEventListener('click', async () => {
+    haptic('light');
+    await refreshAll();
+    toast('Données à jour');
+  });
+
+  $('stockSearch').addEventListener('input', renderStock);
+  $('addCategory').addEventListener('click', () => addCategoryRow());
+  $('saveCategories').addEventListener('click', saveCategoryList);
+  $('saveSettings').addEventListener('click', saveGuards);
+  $('savePromoBandeau').addEventListener('click', enregistrerLeBandeau);
+  monterLEffacementParId();
+  $('saveContact').addEventListener('click', saveContact);
+  $('saveOpening').addEventListener('click', saveOpening);
+  $('saveFulfillment').addEventListener('click', saveFulfillment);
+  $('addZone').addEventListener('click', () => addZoneRow());
+  $('saveZones').addEventListener('click', saveZones);
+  $('saveSlots').addEventListener('click', saveSlots);
+  $('addTier').addEventListener('click', () => addTierRow());
+  $('saveTiers').addEventListener('click', saveTiers);
+  $('savePromo').addEventListener('click', savePromo);
+  $('sendAnnounce').addEventListener('click', envoyerAnnonce);
+  for (const id of ['fAnnounceDays', 'fAnnounceMin']) {
+    $(id).addEventListener('input', compterAudience);
+  }
+  $('linkTarget').addEventListener('change', chargerLien);
+  $('copyLink').addEventListener('click', copierLien);
+  $('sendQr').addEventListener('click', envoyerQr);
+  $('productLink').addEventListener('click', () => {
+    const id = state.editing?.id;
+    closeEditor();
+    selectTab('settings');
+    $('linkTarget').value = id ?? '';
+    chargerLien();
+    $('linkTarget').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+  $('exportCsv').addEventListener('click', exporterCommandes);
+  $('downloadBackup').addEventListener('click', envoyerSauvegarde);
+  $('pickBackup').addEventListener('click', () => $('restoreFile').click());
+  $('restoreFile').addEventListener('change', lireSauvegarde);
+  $('doRestore').addEventListener('click', restaurer);
+  $('fPromoType').addEventListener('change', syncPromoValueLabel);
+  $('newProductBtn').addEventListener('click', () => openEditor(null));
+  $('classerToggle').addEventListener('click', basculerLeClassement);
+
+  $('fHasVariants').addEventListener('change', syncPricingMode);
+  $('fImage').addEventListener('change', syncImageField);
+  // L'aperçu suit aussi une adresse tapée à la main : c'est ce qui révèle
+  // tout de suite une adresse qui ne charge pas.
+  $('fImagePath').addEventListener('input', syncImageField);
+  $('clientSearch').addEventListener('input', chercherDesClients);
+  $('userSearch').addEventListener('input', chercherDesUtilisateurs);
+  $('fPurgeMode').addEventListener('change', syncPurgeMode);
+  $('doPurge').addEventListener('click', purgerLesCommandes);
+  $('addMedia').addEventListener('click', ajouterMedia);
+  $('fMediaUrl').addEventListener('input', () => {
+    const nature = devinerLaNature($('fMediaUrl').value);
+    if (nature) $('fMediaKind').value = nature;
+  });
+  $('pickMedia').addEventListener('click', () => $('mediaFile').click());
+  $('mediaFile').addEventListener('change', envoyerDepuisLaGalerie);
+  $('btnUrgence').addEventListener('click', basculerLUrgence);
+  $('btnOuverture').addEventListener('click', basculerLOuverture);
+  $('pickMusique').addEventListener('click', () => $('fileMusique').click());
+  $('fileMusique').addEventListener('change', (ev) => {
+    const fichier = ev.target.files?.[0];
+    // Le champ est vidé aussitôt : sans ça, renvoyer deux fois le même
+    // fichier ne déclenche pas de second `change`, et le vendeur croit que
+    // l'envoi a échoué.
+    ev.target.value = '';
+    if (fichier) envoyerUnMorceau(fichier);
+  });
+  $('pickImage').addEventListener('click', () => $('imageFile').click());
+  $('imageFile').addEventListener('change', envoyerLaVignette);
+  for (const id of ['fSauvegardeAuto', 'fOubliAuto', 'fOubliJours']) {
+    // `change` et non `input` : sur un champ nombre, `input` enverrait une
+    // requête à chaque chiffre tapé — « 3 » puis « 30 » — et le « 3 » serait
+    // remonté au plancher de sept avant qu'on ait fini d'écrire.
+    $(id).addEventListener('change', enregistrerLEntretien);
+  }
+  $('addVariant').addEventListener('click', () => addVariantRow());
+  $('saveProduct').addEventListener('click', saveProduct);
+  $('deleteProduct').addEventListener('click', removeProduct);
+  $('duplicateProduct').addEventListener('click', duplicateProduct);
+
+  for (const el of document.querySelectorAll('[data-close]')) {
+    el.addEventListener('click', closeEditor);
+  }
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && closeEditor());
+}
+
+async function refreshAll() {
+  const [catalog, orders, stats, settings, verifications, promos, bilan] = await Promise.all([
+    api('/catalog'),
+    api('/orders'),
+    api('/stats'),
+    api('/settings'),
+    api('/verifications'),
+    api('/promos'),
+    api(`/bilan?jours=${state.periode}`),
+  ]);
+  const fiches = await api('/clients').catch(() => ({ total: 0, clients: [] }));
+  // Ce que l'entretien a fait. Toléré absent : une boutique en serverless n'a
+  // pas de minuterie, et le panel ne doit pas se bloquer pour autant.
+  state.entretien = await api('/entretien').catch(() => null);
+  state.settings = settings;
+  state.verifications = verifications;
+  state.promos = promos;
+  state.annonces = await api('/announcements').catch(() => []);
+  state.products = catalog.products;
+  state.categories = catalog.categories.filter((c) => c.id !== 'all');
+  state.orders = orders;
+  state.stats = stats;
+  state.bilan = bilan;
+  state.clients = fiches.clients;
+  state.clientsTotal = fiches.total;
+
+  renderBoard();
+  renderClients();
+  renderOrderFilters();
+  renderOrders();
+  renderStock();
+  renderProducts();
+  renderCategories();
+  renderSettings();
+
+  // Les avis se chargent avec le reste : la pastille de l'onglet doit signaler
+  // une note basse sans réponse même si le vendeur n'ouvre jamais cet onglet —
+  // et c'est exactement pour ça qu'elle existe.
+  chargerLesAvis().catch(() => {});
+  // Qui accepte les alertes, et ce que les clients gardent de côté. Chargé avec
+  // le reste : ces deux chiffres se lisent sur les fiches clients, qui sont déjà
+  // à l'écran.
+  state.audience = await api('/audience').catch(() => null);
+  renderClients();
+
+  $('pendingDot').hidden = stats.pending === 0;
+}
+
+/* ── Navigation ──────────────────────────────────────────── */
+
+function selectTab(name) {
+  state.tab = name;
+  for (const tab of document.querySelectorAll('.a-tab')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+  }
+  for (const panel of document.querySelectorAll('.a-panel')) {
+    panel.hidden = panel.id !== `panel-${name}`;
+  }
+  // Le registre peut compter des milliers de visiteurs : on ne le charge qu'à
+  // la première ouverture de l'onglet, pas à chaque rafraîchissement.
+  if (name === 'users' && !state.usersCharge) chargerUtilisateurs();
+  if (name === 'avis' && !state.avisCharges) chargerLesAvis();
+  window.scrollTo({ top: 0 });
+  haptic('light');
+}
+
+/* ── Tableau de bord ─────────────────────────────────────── */
+
+/**
+ * Le tableau de bord : ce que les commandes disent quand on les regroupe.
+ *
+ * Une seule teinte de remplissage dans tout le panneau, et le néon de la
+ * maison réservé à une marque à la fois. Deux couleurs à distinguer
+ * demanderaient au vendeur d'apprendre une légende pour lire ses ventes du
+ * mardi ; la longueur des barres dit déjà tout.
+ */
+function renderBoard() {
+  renderPeriode();
+
+  const b = state.bilan;
+  if (!b) return;
+  const r = b.resume;
+
+  // Le chiffre de la période, en tête, avec la comparaison qui lui donne un
+  // sens : « 1 240 € » ne dit pas si la boutique monte ou descend.
+  const sens = r.evolution === null ? '' : r.evolution >= 0 ? 'haut' : 'bas';
+  $('hero').innerHTML =
+    `<span class="a-hero__label">Chiffre d'affaires · ${b.periode.jours} jours</span>` +
+    `<span class="a-hero__valeur goldtext">${escapeHtml(formatPrice(r.chiffre))}</span>` +
+    (r.evolution === null
+      ? '<span class="a-hero__delta">Pas encore de période précédente à comparer</span>'
+      : `<span class="a-hero__delta a-hero__delta--${sens}">` +
+        `<b>${r.evolution >= 0 ? '▲' : '▼'} ${Math.abs(r.evolution)} %</b> ` +
+        `vs les ${b.periode.jours} jours d'avant (${escapeHtml(formatPrice(r.chiffreAvant))})</span>`);
+
+  const kpis = [
+    { label: 'Commandes', value: r.commandes },
+    { label: 'Panier moyen', value: formatPrice(r.panierMoyen) },
+    { label: 'À traiter', value: state.stats.pending, cls: state.stats.pending ? 'a-kpi--warn' : '' },
+    { label: 'Clients servis', value: r.clients, note: r.nouveaux ? `dont ${r.nouveaux} nouveau${r.nouveaux > 1 ? 'x' : ''}` : 'aucun nouveau' },
+    { label: 'Livraisons', value: `${r.partLivraison} %` },
+    { label: 'Annulations', value: `${r.tauxAnnulation} %`, cls: r.tauxAnnulation >= 20 ? 'a-kpi--warn' : '' },
+  ];
+  $('kpis').replaceChildren(
+    ...kpis.map((k) => {
+      const div = document.createElement('div');
+      div.className = `a-kpi ${k.cls ?? ''}`.trim();
+      div.innerHTML =
+        `<span class="a-kpi__label">${escapeHtml(k.label)}</span>` +
+        `<span class="a-kpi__value">${escapeHtml(String(k.value))}</span>` +
+        (k.note ? `<span class="a-kpi__note">${escapeHtml(k.note)}</span>` : '');
+      return div;
+    })
+  );
+
+  // Au-delà de six semaines, un jour ne fait plus qu'un trait de deux pixels :
+  // on regroupe par semaine plutôt que de dessiner un peigne illisible.
+  const jours = b.periode.jours > 45 ? parSemaine(b.parJour) : b.parJour;
+  colonnes($('vizJours'), {
+    titre: b.periode.jours > 45 ? 'Chiffre par semaine' : 'Chiffre par jour',
+    points: jours.map((j) => ({ etiquette: j.etiquette, valeur: j.chiffre, detail: `${j.commandes} commande${j.commandes > 1 ? 's' : ''}` })),
+    format: formatPrice,
+    accent: jours.length - 1,
+    colonnesTableau: ['Jour', 'Chiffre', 'Commandes'],
+    lignesTableau: jours.map((j) => [j.etiquette, formatPrice(j.chiffre), String(j.commandes)]),
+  });
+
+  // Six produits au plus, le reste réuni : au-delà, on lit une liste, pas un
+  // graphique — et la liste complète est juste en dessous, dépliable.
+  const tete = b.produits.slice(0, 6);
+  const reste = b.produits.slice(6);
+  const total = reste.reduce((somme, p) => somme + p.chiffre, 0);
+  const lignes = [...tete];
+  if (reste.length) lignes.push({ nom: `${reste.length} autres`, chiffre: total, quantite: reste.reduce((s2, p) => s2 + p.quantite, 0) });
+
+  barres($('vizProduits'), {
+    titre: 'Chiffre par produit',
+    lignes: lignes.map((p) => ({ nom: p.nom, valeur: p.chiffre, texte: `${p.quantite} vendu${p.quantite > 1 ? 's' : ''} · ${formatPrice(p.chiffre)}` })),
+    colonnesTableau: ['Produit', 'Vendus', 'Chiffre'],
+    lignesTableau: b.produits.map((p) => [p.nom, String(p.quantite), formatPrice(p.chiffre)]),
+  });
+
+  colonnes($('vizHeures'), {
+    titre: "Commandes par tranche de 2 h",
+    points: b.heures.map((h) => ({ etiquette: h.tranche, valeur: h.commandes, detail: 'commandes' })),
+    format: (v) => String(v),
+    accent: indiceDuMax(b.heures.map((h) => h.commandes)),
+    pasDeLibelle: 2,
+    colonnesTableau: ['Tranche', 'Commandes'],
+    lignesTableau: b.heures.map((h) => [h.tranche, String(h.commandes)]),
+  });
+
+  colonnes($('vizSemaine'), {
+    titre: 'Commandes par jour de la semaine',
+    points: b.semaine.map((j) => ({ etiquette: j.jour.slice(0, 3), valeur: j.commandes, detail: formatPrice(j.chiffre) })),
+    format: (v) => String(v),
+    accent: indiceDuMax(b.semaine.map((j) => j.commandes)),
+    colonnesTableau: ['Jour', 'Commandes', 'Chiffre'],
+    lignesTableau: b.semaine.map((j) => [j.jour, String(j.commandes), formatPrice(j.chiffre)]),
+  });
+
+  // Une liste ordonnée plutôt qu'une carte : une boutique dessert cinq à vingt
+  // communes, et un classement se lit d'un coup là où une carte demande de
+  // comparer des tailles de pastilles.
+  const villes = b.lieux.slice(0, 8);
+  const autresLieux = b.lieux.slice(8);
+  if (autresLieux.length) {
+    villes.push({
+      lieu: `${autresLieux.length} autres`,
+      commandes: autresLieux.reduce((s2, l) => s2 + l.commandes, 0),
+      chiffre: autresLieux.reduce((s2, l) => s2 + l.chiffre, 0),
+    });
+  }
+  barres($('vizLieux'), {
+    titre: 'Chiffre par commune',
+    lignes: villes.map((l) => ({
+      nom: l.lieu,
+      valeur: l.chiffre,
+      texte: `${l.commandes} commande${l.commandes > 1 ? 's' : ''} · ${formatPrice(l.chiffre)}`,
+    })),
+    colonnesTableau: ['Lieu', 'Commandes', 'Chiffre'],
+    lignesTableau: b.lieux.map((l) => [l.lieu, String(l.commandes), formatPrice(l.chiffre)]),
+  });
+
+  const low = lowStockRows();
+  $('lowStock').replaceChildren(
+    ...(low.length
+      ? low.map((r2) => listRow(r2.label, r2.stock === 0 ? 'Épuisé' : `Plus que ${r2.stock}`))
+      : [emptyRow('Tous les stocks sont corrects.')])
+  );
+}
+
+/** Les boutons de période : ils commandent tout le panneau, d'où leur place. */
+function renderPeriode() {
+  const choix = [
+    [7, '7 jours'],
+    [30, '30 jours'],
+    [90, '90 jours'],
+  ];
+  $('periode').replaceChildren(
+    ...choix.map(([jours, label]) => {
+      const bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.textContent = label;
+      bouton.setAttribute('aria-pressed', String(jours === state.periode));
+      bouton.addEventListener('click', async () => {
+        if (jours === state.periode) return;
+        state.periode = jours;
+        renderPeriode();
+        haptic('light');
+        // On garde le rendu précédent en attendant : un squelette qui clignote
+        // à chaque changement de période fait sauter la page.
+        $('panel-board').style.opacity = '.55';
+        try {
+          state.bilan = await api(`/bilan?jours=${jours}`);
+          renderBoard();
+        } catch (err) {
+          toast(err.message);
+        } finally {
+          $('panel-board').style.opacity = '';
+        }
+      });
+      return bouton;
+    })
+  );
+}
+
+/** Regroupe des jours en semaines, la dernière semaine en tête de son lundi. */
+function parSemaine(parJour) {
+  const semaines = [];
+  for (const jour of parJour) {
+    const dernier = semaines[semaines.length - 1];
+    if (!dernier || dernier.compte === 7) {
+      semaines.push({ etiquette: jour.etiquette, chiffre: 0, commandes: 0, compte: 0 });
+    }
+    const courante = semaines[semaines.length - 1];
+    courante.chiffre += jour.chiffre;
+    courante.commandes += jour.commandes;
+    courante.compte++;
+  }
+  return semaines;
+}
+
+const indiceDuMax = (valeurs) => valeurs.indexOf(Math.max(...valeurs));
+
+/* ── Les graphiques ──────────────────────────────────────── */
+
+/**
+ * Un histogramme, en SVG écrit à la main.
+ *
+ * Pas de bibliothèque : quatre graphiques ne valent pas cinquante kilo-octets
+ * chargés à l'ouverture de l'espace admin, souvent sur le réseau d'un
+ * téléphone. Les marques sont fines, le bout arrondi côté valeur et carré sur
+ * la ligne de base, et deux pixels de fond les séparent — c'est ce vide qui
+ * fait la séparation, pas un contour.
+ */
+function colonnes(figure, { titre, points, format, accent = -1, pasDeLibelle, colonnesTableau, lignesTableau }) {
+  // Sept étiquettes au plus : trente dates côte à côte se chevauchent et ne se
+  // lisent plus du tout — mieux vaut une date sur cinq, lisible.
+  const pas = pasDeLibelle ?? Math.max(1, Math.ceil(points.length / 7));
+  const L = 340;
+  const H = 132;      // la zone tracée
+  const BAS = 148;    // la bande des étiquettes, incluse dans la boîte
+  const GAUCHE = 30;  // la gouttière de l'échelle
+
+  const valeurs = points.map((p) => p.valeur);
+  const max = Math.max(...valeurs, 0);
+  if (!points.length || max === 0) {
+    figure.innerHTML =
+      `<p class="a-viz__titre">${escapeHtml(titre)}</p>` +
+      '<p class="a-viz__vide">Rien à montrer sur cette période.</p>';
+    return;
+  }
+
+  const bande = (L - GAUCHE) / points.length;
+  const largeur = Math.max(2, Math.min(24, bande - 2)); // les 2 px de vide
+  const hauteur = (v) => Math.round((v / max) * (H - 14));
+
+  const marques = points
+    .map((p, i) => {
+      const x = GAUCHE + i * bande + (bande - largeur) / 2;
+      // Un jour sans vente garde son trait, en gris de piste : sans lui, la
+      // rangée de jours a des trous, on ne sait plus lequel on regarde, et le
+      // jour souligné disparaîtrait avec sa valeur les jours creux.
+      const h = p.valeur > 0 ? Math.max(3, hauteur(p.valeur)) : 2;
+      const y = H - h;
+      const r = Math.min(4, largeur / 2, h);
+      const classe = p.valeur > 0 ? (i === accent ? 'a-col a-col--accent' : 'a-col') : 'a-col a-col--vide';
+      const forme =
+        `<path class="${classe}" d="M${x} ${y + r} a${r} ${r} 0 0 1 ${r} -${r} h${largeur - 2 * r} a${r} ${r} 0 0 1 ${r} ${r} V${H} H${x} Z"></path>`;
+      // La zone de survol couvre toute la bande : viser une colonne de six
+      // pixels au doigt est un jeu d'adresse, pas une lecture.
+      return (
+        `<rect class="a-col__zone" x="${GAUCHE + i * bande}" y="0" width="${bande}" height="${H}" ` +
+        `tabindex="0" role="button" aria-label="${escapeHtml(`${p.etiquette} : ${format(p.valeur)}`)}" ` +
+        `data-bulle="${escapeHtml(`${p.etiquette} · ${format(p.valeur)}${p.detail ? ` · ${p.detail}` : ''}`)}"></rect>${forme}`
+      );
+    })
+    .join('');
+
+  const etiquettes = points
+    .map((p, i) =>
+      i % pas === 0 || i === points.length - 1
+        ? `<text class="a-axe" x="${GAUCHE + i * bande + bande / 2}" y="${BAS}" text-anchor="middle">${escapeHtml(p.etiquette)}</text>`
+        : ''
+    )
+    .join('');
+
+  // Une valeur posée sur une seule cap — celle qu'on souligne. Un nombre sur
+  // chaque colonne ne se lit plus.
+  // Rien à écrire au-dessus d'un jour sans vente : « 0 € » suspendu au bord
+  // encombre l'axe et n'apprend rien que la colonne vide ne dise déjà.
+  const pointe =
+    accent >= 0 && points[accent]?.valeur > 0
+      ? `<text class="a-axe" x="${GAUCHE + accent * bande + bande / 2}" y="${H - hauteur(points[accent].valeur) - 5}" ` +
+        `text-anchor="middle">${escapeHtml(format(points[accent].valeur))}</text>`
+      : '';
+
+  figure.innerHTML =
+    `<p class="a-viz__titre">${escapeHtml(titre)}</p>` +
+    `<svg viewBox="0 0 ${L} ${BAS + 4}" role="img" aria-label="${escapeHtml(titre)}">` +
+    `<line class="a-grille" x1="${GAUCHE}" y1="0.5" x2="${L}" y2="0.5"></line>` +
+    `<line class="a-grille" x1="${GAUCHE}" y1="${H + 0.5}" x2="${L}" y2="${H + 0.5}"></line>` +
+    `<text class="a-axe" x="0" y="9">${escapeHtml(format(max))}</text>` +
+    `<text class="a-axe" x="0" y="${H + 3}">0</text>` +
+    `${marques}${pointe}${etiquettes}</svg>` +
+    tableauDeValeurs(colonnesTableau, lignesTableau);
+
+  brancherLaBulle(figure);
+}
+
+/**
+ * Des barres horizontales, en HTML.
+ *
+ * Un nom de produit tient rarement dans une colonne verticale : ici il a toute
+ * la largeur, la barre est en dessous, et la valeur au bout de la ligne.
+ */
+function barres(figure, { titre, lignes, colonnesTableau, lignesTableau }) {
+  const max = Math.max(...lignes.map((l) => l.valeur), 0);
+  if (!lignes.length || max === 0) {
+    figure.innerHTML =
+      `<p class="a-viz__titre">${escapeHtml(titre)}</p>` +
+      '<p class="a-viz__vide">Aucune vente sur cette période.</p>';
+    return;
+  }
+
+  figure.innerHTML =
+    `<p class="a-viz__titre">${escapeHtml(titre)}</p>` +
+    '<div class="a-barres">' +
+    lignes
+      .map(
+        (l) =>
+          '<div class="a-barre">' +
+          `<div class="a-barre__tete"><b>${escapeHtml(l.nom)}</b>` +
+          `<span class="a-barre__valeur">${escapeHtml(l.texte)}</span></div>` +
+          `<div class="a-barre__piste"><div class="a-barre__part" style="width:${Math.max(2, Math.round((l.valeur / max) * 100))}%"></div></div>` +
+          '</div>'
+      )
+      .join('') +
+    '</div>' +
+    tableauDeValeurs(colonnesTableau, lignesTableau);
+}
+
+/**
+ * Le même contenu, en tableau, replié sous le graphique.
+ *
+ * Une bulle de survol n'existe pas au doigt et ne se lit pas au lecteur
+ * d'écran : aucune valeur ne doit n'être accessible que par elle.
+ */
+function tableauDeValeurs(colonnes_, lignes) {
+  if (!colonnes_?.length || !lignes?.length) return '';
+  return (
+    '<details><summary>Voir les chiffres</summary><table><thead><tr>' +
+    colonnes_.map((c) => `<th>${escapeHtml(c)}</th>`).join('') +
+    '</tr></thead><tbody>' +
+    lignes
+      .map((ligne) => `<tr>${ligne.map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}</tr>`)
+      .join('') +
+    '</tbody></table></details>'
+  );
+}
+
+/** Une bulle unique, posée près du doigt, qui ne retient jamais l'information. */
+function brancherLaBulle(figure) {
+  const montrer = (zone, x, y) => {
+    let bulle = document.getElementById('bulleViz');
+    if (!bulle) {
+      bulle = document.createElement('div');
+      bulle.id = 'bulleViz';
+      bulle.className = 'a-bulle';
+      document.body.append(bulle);
+    }
+    bulle.textContent = zone.dataset.bulle ?? '';
+    bulle.style.left = `${Math.min(window.innerWidth - 12, Math.max(12, x))}px`;
+    bulle.style.top = `${Math.max(8, y - 44)}px`;
+    bulle.style.transform = 'translateX(-50%)';
+    bulle.hidden = false;
+  };
+  const cacher = () => {
+    const bulle = document.getElementById('bulleViz');
+    if (bulle) bulle.hidden = true;
+  };
+
+  for (const zone of figure.querySelectorAll('.a-col__zone')) {
+    zone.addEventListener('pointerenter', (e) => montrer(zone, e.clientX, e.clientY));
+    zone.addEventListener('pointerdown', (e) => montrer(zone, e.clientX, e.clientY));
+    zone.addEventListener('pointerleave', cacher);
+    zone.addEventListener('focus', () => {
+      const boite = zone.getBoundingClientRect();
+      montrer(zone, boite.left + boite.width / 2, boite.top);
+    });
+    zone.addEventListener('blur', cacher);
+  }
+}
+
+function lowStockRows() {
+  const rows = [];
+  for (const product of state.products) {
+    if (product.variants?.length) {
+      for (const v of product.variants) {
+        if (v.stock <= LOW_STOCK) rows.push({ label: `${product.name} · ${v.label}`, stock: v.stock });
+      }
+    } else if ((product.stock ?? 0) <= LOW_STOCK) {
+      rows.push({ label: product.name, stock: product.stock ?? 0 });
+    }
+  }
+  return rows.sort((a, b) => a.stock - b.stock);
+}
+
+function listRow(label, meta) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span>${escapeHtml(label)}</span><span class="a-muted">${escapeHtml(meta)}</span>`;
+  return li;
+}
+
+function emptyRow(text) {
+  const li = document.createElement('li');
+  li.className = 'a-empty';
+  li.style.justifyContent = 'center';
+  li.textContent = text;
+  return li;
+}
+
+/* ── Commandes ───────────────────────────────────────────── */
+
+function renderOrderFilters() {
+  const filters = [{ id: '', label: 'Toutes' }, ...Object.entries(state.statuses).map(([id, s]) => ({ id, label: s.label }))];
+
+  $('orderFilters').replaceChildren(
+    ...filters.map((f) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'a-filter';
+      btn.textContent = f.label;
+      btn.setAttribute('aria-pressed', String(f.id === state.orderFilter));
+      btn.addEventListener('click', () => {
+        state.orderFilter = f.id;
+        renderOrderFilters();
+        renderOrders();
+        haptic('light');
+      });
+      return btn;
+    })
+  );
+}
+
+/* ── Clients ─────────────────────────────────────────────── */
+
+/**
+ * Les fiches clients.
+ *
+ * Rien n'est collecté pour cet écran : il regroupe ce que les commandes disent
+ * déjà. Une carte repliée porte l'essentiel — qui, combien de fois, combien —
+ * et s'ouvre sur le reste : adresses servies, produits habituels, états.
+ */
+function renderClients() {
+  const liste = state.clients;
+  $('clientCount').textContent = liste.length
+    ? `${state.clientsTotal} client${state.clientsTotal > 1 ? 's' : ''}` +
+      (state.clientsTotal > liste.length ? ` · les ${liste.length} plus récents` : '')
+    : '';
+
+  renderAudience();
+
+  const conteneur = $('clientsList');
+  if (!liste.length) {
+    conteneur.innerHTML = `<p class="a-empty">${
+      $('clientSearch').value.trim() ? 'Personne ne correspond.' : 'Aucun client pour le moment.'
+    }</p>`;
+    return;
+  }
+  conteneur.replaceChildren(...liste.map(carteClient));
+}
+
+/**
+ * Qui on peut encore prévenir, et ce que les clients gardent de côté.
+ *
+ * Deux chiffres que rien d'autre ne donne. Le second surtout : un article très
+ * mis en favori et peu vendu est un problème de prix ou de stock, pas de goût.
+ */
+function renderAudience() {
+  const zone = $('audience');
+  if (!zone) return;
+  const a = state.audience;
+  if (!a) return void (zone.hidden = true);
+
+  const canaux = a.canaux
+    .map((c) => {
+      const combien = a.parCanal?.[c.clef] ?? 0;
+      const part = a.joignables ? Math.round((combien / a.joignables) * 100) : 0;
+      return (
+        '<div class="a-canal">' +
+        `<span class="a-canal__nom">${escapeHtml(c.label)}</span>` +
+        `<span class="a-canal__piste"><span style="width:${part}%"></span></span>` +
+        `<span class="a-canal__chiffre">${combien}<small> / ${a.joignables}</small></span>` +
+        '</div>'
+      );
+    })
+    .join('');
+
+  const favoris = a.favoris?.length
+    ? '<h3 class="a-client__h3">Le plus mis en favori</h3>' +
+      `<ul class="a-list">${a.favoris
+        .slice(0, 5)
+        .map((f) => `<li><span>${escapeHtml(f.nom)}</span><b>${f.nombre}</b></li>`)
+        .join('')}</ul>`
+    : '';
+
+  zone.innerHTML =
+    '<h3 class="a-client__h3">Qui accepte les alertes</h3>' +
+    `<p class="a-hint" style="margin-bottom:10px">${a.joignables} client${a.joignables > 1 ? 's' : ''} joignable${a.joignables > 1 ? 's' : ''} — ceux qui ont déjà commandé et n'ont pas écrit /stop.</p>` +
+    canaux +
+    favoris;
+  zone.hidden = false;
+}
+
+/** Ce qu'une personne accepte de recevoir, ligne par ligne. */
+function alertesDe(id) {
+  const a = state.audience;
+  if (!a?.canaux) return '';
+  const siennes = a.preferences?.[String(id)] ?? {};
+
+  return (
+    '<h3 class="a-client__h3">Ses alertes</h3><p>' +
+    a.canaux
+      .map((c) => {
+        const actif = siennes[c.clef] !== false;
+        return `<span class="a-etat ${actif ? 'a-etat--ok' : ''}">${actif ? '🔔' : '🔕'} ${escapeHtml(c.label)}</span>`;
+      })
+      .join(' ') +
+    '</p>'
+  );
+}
+
+/* ── Utilisateurs ────────────────────────────────────────── */
+
+/** Charge le registre. Appelé à la première ouverture de l'onglet. */
+async function chargerUtilisateurs(q = '') {
+  try {
+    const data = await api(`/users?q=${encodeURIComponent(q)}`);
+    state.users = data.users;
+    state.usersTotal = data.total;
+    state.usersAcheteurs = data.acheteurs;
+    state.usersMontres = data.montres;
+    state.usersCharge = true;
+    renderUsers();
+  } catch (err) {
+    $('usersList').innerHTML = `<p class="a-empty">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Tous ceux qui ont ouvert le bot, curieux compris.
+ *
+ * En tête, les deux nombres qui comptent : combien de gens ont poussé la
+ * porte, et combien ont fini par commander. L'écart, c'est ce que la boutique
+ * laisse repartir sans rien vendre — le seul chiffre qu'un onglet « clients »
+ * ne peut pas montrer, puisqu'un client, par définition, a déjà commandé.
+ */
+function renderUsers() {
+  const acheteurs = state.usersAcheteurs;
+  const total = state.usersTotal;
+  const taux = total ? Math.round((acheteurs / total) * 100) : 0;
+  $('userStat').innerHTML =
+    `<div class="a-kpi"><span class="a-kpi__label">Visiteurs du bot</span>` +
+    `<span class="a-kpi__value">${total}</span></div>` +
+    `<div class="a-kpi a-kpi--accent"><span class="a-kpi__label">Ont commandé</span>` +
+    `<span class="a-kpi__value">${acheteurs}</span>` +
+    `<span class="a-kpi__note">${taux} % des visiteurs</span></div>`;
+
+  const liste = state.users;
+  const q = $('userSearch').value.trim();
+  $('userCount').textContent = q
+    ? `${state.usersMontres} résultat${state.usersMontres > 1 ? 's' : ''}`
+    : liste.length
+      ? `${total} visiteur${total > 1 ? 's' : ''}` +
+        (total > liste.length ? ` · les ${liste.length} plus récents` : '')
+      : '';
+
+  const conteneur = $('usersList');
+  if (!liste.length) {
+    conteneur.innerHTML = `<p class="a-empty">${
+      q ? 'Personne ne correspond.' : 'Personne n\'a encore ouvert le bot.'
+    }</p>`;
+    return;
+  }
+  conteneur.replaceChildren(...liste.map(carteUtilisateur));
+}
+
+let rechercheUsersEnAttente = null;
+function chercherDesUtilisateurs() {
+  clearTimeout(rechercheUsersEnAttente);
+  rechercheUsersEnAttente = setTimeout(() => chargerUtilisateurs($('userSearch').value.trim()), 250);
+}
+
+/**
+ * Une ligne du registre.
+ *
+ * Repliée, elle dit qui, quand vu la dernière fois, et son état d'un coup
+ * d'œil (a commandé, bloqué…). Ouverte, elle donne les dates, le nombre de
+ * contacts, et de quoi agir : écrire, voir la fiche Telegram, bloquer.
+ */
+function carteUtilisateur(u) {
+  const carte = document.createElement('article');
+  carte.className = 'a-client';
+  carte.dataset.id = String(u.id);
+  if (state.presents?.has(String(u.id))) carte.classList.add('est-actif');
+
+  const qui = u.username ? `@${u.username}` : [u.prenom, u.nom].filter(Boolean).join(' ') || `#${u.id}`;
+  const etats = [
+    u.aCommande ? `<span class="a-etat a-etat--ok">🛒 ${u.commandes} cmd</span>` : '',
+    u.bloque ? '<span class="a-etat a-etat--ko">⛔ bloqué</span>' : '',
+    u.verification === 'approved' ? '<span class="a-etat">🪪 vérifié</span>' : '',
+    u.abonne ? '' : '<span class="a-etat">🔕 désabonné</span>',
+  ].filter(Boolean).join('');
+
+  carte.innerHTML = `
+    <button class="a-client__tete" type="button" aria-expanded="false">
+      <span class="a-client__qui">${escapeHtml(qui)}</span>
+      <span class="a-client__meta">${escapeHtml(ilYA(u.dernier))} · ${u.contacts} contact${u.contacts > 1 ? 's' : ''}${etats ? ` · ${etats}` : ''}</span>
+    </button>
+    <div class="a-client__detail" hidden></div>`;
+
+  const tete = carte.querySelector('.a-client__tete');
+  const detail = carte.querySelector('.a-client__detail');
+  tete.addEventListener('click', () => {
+    const ouvert = detail.hidden;
+    detail.hidden = !ouvert;
+    tete.setAttribute('aria-expanded', String(ouvert));
+    if (ouvert && !detail.childElementCount) detail.append(detailUtilisateur(u));
+    haptic('light');
+  });
+  return carte;
+}
+
+function detailUtilisateur(u) {
+  const bloc = document.createElement('div');
+  const nom = [u.prenom, u.nom].filter(Boolean).join(' ') || '—';
+  const faits = [
+    ['Nom Telegram', nom],
+    ['Pseudo', u.username ? `@${u.username}` : '—'],
+    ['Identifiant', u.id],
+    ['Première visite', new Date(u.premier).toLocaleDateString('fr-FR')],
+    ['Dernière visite', new Date(u.dernier).toLocaleDateString('fr-FR')],
+    ['Contacts', String(u.contacts)],
+  ];
+
+  bloc.innerHTML =
+    `<dl class="a-client__chiffres">${faits
+      .map(([l, v]) => `<div><dt>${escapeHtml(l)}</dt><dd>${escapeHtml(String(v))}</dd></div>`)
+      .join('')}</dl>` +
+    (u.aCommande
+      ? `<p class="a-client__gris" style="margin-top:12px">Ce visiteur a déjà commandé — sa fiche complète est dans l'onglet Clients.</p>`
+      : '') +
+    `<h3 class="a-client__h3">Comment le joindre</h3><div class="a-client__joindre"></div>` +
+    alertesDe(u.id) +
+    '<div class="a-client__actions"></div>' +
+    '<div class="a-client__telegram" hidden></div>';
+
+  // Le même bloc que sur une fiche client : un curieux qui n'a jamais commandé
+  // se joint exactement de la même façon, et c'est souvent lui qu'on veut
+  // relancer.
+  bloc.querySelector('.a-client__joindre').append(joindreBloc(u));
+
+  const actions = bloc.querySelector('.a-client__actions');
+
+  const tg = document.createElement('button');
+  tg.className = 'a-btn';
+  tg.type = 'button';
+  tg.textContent = '👤 Fiche Telegram';
+  tg.addEventListener('click', () => chargerFicheTelegram(u.id, bloc, tg));
+  actions.append(tg);
+
+  const ban = document.createElement('button');
+  ban.className = `a-btn ${u.bloque ? '' : 'a-btn--danger'}`.trim();
+  ban.type = 'button';
+  ban.textContent = u.bloque ? '↩︎ Débloquer' : '⛔ Bloquer';
+  ban.addEventListener('click', async () => {
+    await toggleBlock(u.id, !u.bloque, ban);
+    u.bloque = !u.bloque;
+    ban.textContent = u.bloque ? '↩︎ Débloquer' : '⛔ Bloquer';
+    ban.className = `a-btn ${u.bloque ? '' : 'a-btn--danger'}`.trim();
+    ban.disabled = false;
+  });
+  actions.append(ban);
+
+  const [effacer, panneau] = blocEffacement(u.id, () => refreshAll());
+  actions.append(effacer);
+  bloc.append(panneau);
+  return bloc;
+}
+
+let rechercheEnAttente = null;
+
+/** La recherche part au serveur : elle porte sur toutes les fiches, pas sur
+ *  les deux cents envoyées. Une frappe rapide ne déclenche qu'un appel. */
+function chercherDesClients() {
+  clearTimeout(rechercheEnAttente);
+  rechercheEnAttente = setTimeout(async () => {
+    const q = $('clientSearch').value.trim();
+    try {
+      const fiches = await api(`/clients?q=${encodeURIComponent(q)}`);
+      state.clients = fiches.clients;
+      state.clientsTotal = fiches.total;
+      renderClients();
+    } catch (err) {
+      toast(err.message);
+    }
+  }, 250);
+}
+
+function carteClient(fiche) {
+  const carte = document.createElement('article');
+  carte.className = 'a-client';
+  carte.dataset.id = String(fiche.id);
+  if (state.presents?.has(String(fiche.id))) carte.classList.add('est-actif');
+
+  const qui = fiche.username ? `@${fiche.username}` : fiche.nom ?? `#${fiche.id}`;
+  const depuis = fiche.derniere ? ilYA(fiche.derniere) : '—';
+  // Sans pseudo, l'identifiant EST l'adresse : il doit se voir sans déplier,
+  // sinon on ne sait même pas qu'on a de quoi joindre ce client.
+  const sansPseudo = fiche.username ? '' : `<span class="a-etat">id ${escapeHtml(fiche.id)}</span>`;
+  const etats = [
+    fiche.bloque ? '<span class="a-etat a-etat--ko">⛔ bloqué</span>' : '',
+    fiche.verification === 'approved' ? '<span class="a-etat a-etat--ok">🪪 vérifié</span>' : '',
+    fiche.verification === 'pending' ? '<span class="a-etat">🪪 en attente</span>' : '',
+    fiche.abonne ? '' : '<span class="a-etat">🔕 désabonné</span>',
+    sansPseudo,
+  ].filter(Boolean).join('');
+
+  carte.innerHTML = `
+    <button class="a-client__tete" type="button" aria-expanded="false">
+      <span class="a-client__qui">${escapeHtml(qui)}${fiche.nom && fiche.username ? ` · ${escapeHtml(fiche.nom)}` : ''}</span>
+      <span class="a-client__chiffre">${formatPrice(fiche.chiffre)}</span>
+      <span class="a-client__meta">${fiche.commandes} commande${fiche.commandes > 1 ? 's' : ''} · ${escapeHtml(depuis)}${etats ? ` · ${etats}` : ''}</span>
+    </button>
+    <div class="a-client__detail" hidden></div>`;
+
+  const tete = carte.querySelector('.a-client__tete');
+  const detail = carte.querySelector('.a-client__detail');
+  tete.addEventListener('click', () => {
+    const ouvert = detail.hidden;
+    detail.hidden = !ouvert;
+    tete.setAttribute('aria-expanded', String(ouvert));
+    if (ouvert && !detail.childElementCount) detail.append(detailClient(fiche));
+    haptic('light');
+  });
+  return carte;
+}
+
+/** Le détail d'une fiche : tout ce que la boutique sait, et rien de plus. */
+function detailClient(fiche) {
+  const bloc = document.createElement('div');
+
+  // Les nombres qui se lisent d'un coup d'œil. Le rang d'abord : savoir qu'on
+  // tient son troisième meilleur client change la façon de lui répondre.
+  const chiffres = [
+    ['Rang', fiche.rang ? `${fiche.rang}ᵉ / ${fiche.surTotal}` : '—'],
+    ['Commandes', String(fiche.commandes)],
+    ['Dépensé', formatPrice(fiche.chiffre)],
+    ['Panier moyen', formatPrice(fiche.panierMoyen)],
+    ['Articles', String(fiche.articles ?? 0)],
+    ['Annulées', fiche.annulees ? `${fiche.annulees} · ${fiche.tauxAnnulation} %` : '0'],
+    ['Livraisons', `${fiche.livraisons} / ${fiche.livraisons + fiche.retraits}`],
+    ['Dernière', fiche.joursDepuis === null ? '—' : joursEnClair(fiche.joursDepuis)],
+    ['Rythme', rythmeEnClair(fiche.frequence)],
+    ['Client depuis', fiche.premiere ? new Date(fiche.premiere).toLocaleDateString('fr-FR') : '—'],
+  ];
+
+  // Ce que le registre du bot ajoute : l'écart entre « il regarde » et « il
+  // achète ». C'est le seul endroit où ça se voit.
+  if (fiche.vu) {
+    chiffres.push(
+      ['Connaît la boutique', fiche.vu.premiere ? new Date(fiche.vu.premiere).toLocaleDateString('fr-FR') : '—'],
+      ['Ouvertures du bot', String(fiche.vu.contacts ?? 0)]
+    );
+  }
+
+  const adresses = fiche.adresses.length
+    ? fiche.adresses
+        .map((a) => {
+          const route = itineraire(a);
+          return (
+            '<li>' +
+            `${escapeHtml(a.street)}${a.complement ? `<br><span class="a-client__gris">${escapeHtml(a.complement)}</span>` : ''}` +
+            `<br>${escapeHtml(`${a.postalCode} ${a.city}`.trim())}` +
+            (a.fois > 1 ? ` <span class="a-client__gris">· ${a.fois} livraisons</span>` : '') +
+            (route
+              ? `<span class="a-route">` +
+                `<a href="${escapeHtml(route.maps)}" target="_blank" rel="noopener">🗺 Maps</a>` +
+                `<a href="${escapeHtml(route.waze)}" target="_blank" rel="noopener">🚗 Waze</a>` +
+                `<a href="${escapeHtml(route.plans)}" target="_blank" rel="noopener">🧭 Plans</a></span>`
+              : '') +
+            '</li>'
+          );
+        })
+        .join('')
+    : '<li class="a-client__gris">Aucune livraison — retrait sur place.</li>';
+
+  const habitudes = [
+    fiche.habitudes?.jour ? `plutôt le <b>${escapeHtml(fiche.habitudes.jour)}</b>` : null,
+    fiche.habitudes?.heure !== null && fiche.habitudes?.heure !== undefined
+      ? `vers <b>${String(fiche.habitudes.heure).padStart(2, '0')} h</b>`
+      : null,
+  ].filter(Boolean);
+
+  // L'état des commandes en cours : trois « prête » qui dorment, c'est une
+  // information que le chiffre d'affaires ne donne pas.
+  const statuts = (fiche.statuts ?? [])
+    .map((e) => `${escapeHtml(state.statuses[e.status]?.label ?? e.status)} <span class="a-client__gris">× ${e.nombre}</span>`)
+    .join(' · ');
+
+  bloc.innerHTML =
+    `<dl class="a-client__chiffres">${chiffres
+      .map(([label, valeur]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(valeur)}</dd></div>`)
+      .join('')}</dl>` +
+    `<h3 class="a-client__h3">Comment le joindre</h3><div class="a-client__joindre"></div>` +
+    alertesDe(fiche.id) +
+    (habitudes.length ? `<h3 class="a-client__h3">Quand il commande</h3><p>Il commande ${habitudes.join(', ')}.</p>` : '') +
+    (fiche.produits.length
+      ? `<h3 class="a-client__h3">Ce qu'il prend</h3><p>${fiche.produits
+          .map((p) => `${escapeHtml(p.nom)} <span class="a-client__gris">× ${p.quantite}</span>`)
+          .join(' · ')}</p>`
+      : '') +
+    (statuts ? `<h3 class="a-client__h3">Où en sont ses commandes</h3><p>${statuts}</p>` : '') +
+    `<h3 class="a-client__h3">Où livrer</h3><ul class="a-client__adresses">${adresses}</ul>` +
+    (fiche.telephones.length
+      ? `<h3 class="a-client__h3">Téléphone</h3><p>${fiche.telephones
+          .map((t) => `<a href="tel:${escapeHtml(t.replace(/\s/g, ''))}">${escapeHtml(t)}</a>`)
+          .join(' · ')}</p>`
+      : '') +
+    (fiche.promos?.length
+      ? `<h3 class="a-client__h3">Codes utilisés</h3><p>${fiche.promos
+          .map((p) => `<b>${escapeHtml(p.code)}</b>${p.fois > 1 ? ` <span class="a-client__gris">× ${p.fois}</span>` : ''}`)
+          .join(' · ')}</p>`
+      : '') +
+    (fiche.notes?.length
+      ? `<h3 class="a-client__h3">Ce qu'il a écrit</h3><ul class="a-client__notes">${fiche.notes
+          .map(
+            (n) =>
+              `<li>« ${escapeHtml(n.texte)} »<br><span class="a-client__gris">${escapeHtml(n.reference ?? '')} · ${
+                n.date ? new Date(n.date).toLocaleDateString('fr-FR') : ''
+              }</span></li>`
+          )
+          .join('')}</ul>`
+      : '') +
+    `<h3 class="a-client__h3">Dernières commandes</h3><ul class="a-client__commandes">${fiche.dernieres
+      .map(
+        (c) =>
+          `<li><b>${escapeHtml(c.reference)}</b> · ${new Date(c.date).toLocaleDateString('fr-FR')} · ` +
+          `${formatPrice(c.total)} · ${escapeHtml(state.statuses[c.status]?.label ?? c.status)}` +
+          `${c.mode === 'delivery' ? ' · 🛵' : ' · 🏠'}</li>`
+      )
+      .join('')}</ul>` +
+    '<div class="a-client__actions"></div>' +
+    '<div class="a-client__telegram" hidden></div>';
+
+  bloc.querySelector('.a-client__joindre').append(joindreBloc(fiche));
+
+  const actions = bloc.querySelector('.a-client__actions');
+
+  // Ce que Telegram veut bien dire, à la demande : un appel par client, et
+  // seulement quand le vendeur le demande.
+  const tg = document.createElement('button');
+  tg.className = 'a-btn';
+  tg.type = 'button';
+  tg.textContent = '👤 Fiche Telegram';
+  tg.addEventListener('click', () => chargerFicheTelegram(fiche.id, bloc, tg));
+  actions.append(tg);
+
+  const ban = document.createElement('button');
+  ban.className = `a-btn ${fiche.bloque ? '' : 'a-btn--danger'}`.trim();
+  ban.type = 'button';
+  ban.textContent = fiche.bloque ? '↩︎ Débloquer' : '⛔ Bloquer';
+  ban.addEventListener('click', async () => {
+    await toggleBlock(fiche.id, !fiche.bloque, ban);
+    fiche.bloque = !fiche.bloque;
+    ban.textContent = fiche.bloque ? '↩︎ Débloquer' : '⛔ Bloquer';
+    ban.className = `a-btn ${fiche.bloque ? '' : 'a-btn--danger'}`.trim();
+    ban.disabled = false;
+  });
+  actions.append(ban);
+
+  const [effacer, panneau] = blocEffacement(fiche.id, () => refreshAll());
+  actions.append(effacer);
+  bloc.append(panneau);
+
+  return bloc;
+}
+
+/**
+ * Effacer les données d'une personne, depuis sa fiche.
+ *
+ * Le bouton n'efface rien : il déplie un panneau qui va d'abord DEMANDER au
+ * serveur ce qu'on a sur cette personne. Un effacement ne se rattrape pas, et
+ * le vendeur a le droit de voir ce qu'il s'apprête à perdre — y compris
+ * « rien », qui est la réponse quand on s'est trompé d'un chiffre.
+ *
+ * Deux modes, et le libellé dit lequel choisir : oublier garde la
+ * comptabilité, effacer la réécrit.
+ */
+function blocEffacement(id, surFini) {
+  const bouton = document.createElement('button');
+  bouton.className = 'a-btn a-btn--danger';
+  bouton.type = 'button';
+  bouton.textContent = '🧹 Effacer ses données';
+
+  const panneau = document.createElement('div');
+  panneau.className = 'a-effacer';
+  panneau.hidden = true;
+  panneau.innerHTML =
+    '<p class="a-effacer__quoi" aria-live="polite">Je regarde ce qu\'on a…</p>' +
+    '<label class="a-field"><span>Que faire</span>' +
+    '<select data-mode>' +
+    '<option value="oublier">Oublier — ses commandes restent, sans son nom</option>' +
+    '<option value="effacer">Tout effacer — ses commandes et ses avis partent aussi</option>' +
+    '</select></label>' +
+    '<p class="a-hint">Oublier est presque toujours le bon choix : ton bilan ne bouge pas, ' +
+    'et il ne reste plus rien qui désigne quelqu\'un. ' +
+    '<b>Un blocage n\'est pas levé</b> — sinon effacer deviendrait le moyen de se débloquer.</p>' +
+    '<label><input type="checkbox" data-sauvegarde checked> M\'envoyer une sauvegarde d\'abord</label>' +
+    '<label class="a-field"><span>Écris EFFACER pour confirmer</span>' +
+    '<input data-confirmation type="text" autocomplete="off" spellcheck="false" placeholder="EFFACER"></label>' +
+    '<button class="a-btn a-btn--danger a-btn--block" type="button" data-go>Effacer définitivement</button>';
+
+  bouton.addEventListener('click', async () => {
+    panneau.hidden = !panneau.hidden;
+    if (panneau.hidden) return;
+    const quoi = panneau.querySelector('.a-effacer__quoi');
+    try {
+      const vu = await api(`/clients/${encodeURIComponent(id)}/donnees`);
+      const morceaux = [
+        `${vu.commandes} commande${vu.commandes > 1 ? 's' : ''}`,
+        vu.depense ? formatPrice(vu.depense) : null,
+        vu.avis ? `${vu.avis} avis` : null,
+        vu.favoris ? `${vu.favoris} favori${vu.favoris > 1 ? 's' : ''}` : null,
+        vu.connu ? 'connu du bot' : null,
+        vu.verification !== 'none' ? `vérification : ${vu.verification}` : null,
+        vu.bloque ? '⛔ bloqué' : null,
+      ].filter(Boolean);
+      quoi.textContent = vu.admin
+        ? "C'est un administrateur : retire-lui d'abord ses droits."
+        : `On a sur cette personne : ${morceaux.join(' · ')}.`;
+      panneau.querySelector('[data-go]').disabled = Boolean(vu.admin);
+    } catch (err) {
+      quoi.textContent = err.message;
+    }
+  });
+
+  panneau.querySelector('[data-go]').addEventListener('click', async (ev) => {
+    const go = ev.currentTarget;
+    go.disabled = true;
+    try {
+      const fait = await api(`/clients/${encodeURIComponent(id)}/effacer`, {
+        method: 'POST',
+        body: {
+          mode: panneau.querySelector('[data-mode]').value,
+          sauvegarde: panneau.querySelector('[data-sauvegarde]').checked,
+          confirmation: panneau.querySelector('[data-confirmation]').value,
+        },
+      });
+      toast(fait.bloqueEncore ? 'Effacé — il reste bloqué' : 'Effacé');
+      haptic('success');
+      surFini?.(fait);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      go.disabled = false;
+    }
+  });
+
+  return [bouton, panneau];
+}
+
+/**
+ * Effacer quelqu'un qui n'a de fiche nulle part.
+ *
+ * Une personne qui a mis trois produits en favori sans jamais commander ni
+ * écrire au bot n'apparaît ni dans Clients — qui se reconstruit à partir des
+ * commandes — ni dans Utilisateurs, qui est le registre du bot. La boutique
+ * garde pourtant des traces d'elle, et c'est précisément le cas où elle
+ * écrira pour demander qu'on l'oublie.
+ *
+ * Le même panneau que sur une fiche, mais suspendu à un champ : il se
+ * reconstruit à chaque identifiant saisi, sinon le second effacement
+ * porterait sur la personne du premier.
+ */
+function monterLEffacementParId() {
+  const champ = $('fOublieId');
+  const hote = $('fOublieBloc');
+  if (!champ || !hote) return;
+  let dernier = '';
+  const refaire = () => {
+    const id = champ.value.trim();
+    if (id === dernier) return;
+    dernier = id;
+    hote.replaceChildren();
+    if (!/^\d{1,20}$/.test(id)) return;
+    const [bouton, panneau] = blocEffacement(id, () => {
+      champ.value = '';
+      dernier = '';
+      hote.replaceChildren();
+      refreshAll();
+    });
+    hote.append(bouton, panneau);
+  };
+  champ.addEventListener('input', refaire);
+  champ.addEventListener('change', refaire);
+}
+
+/**
+ * Les chemins pour joindre quelqu'un, du plus sûr au plus hasardeux.
+ *
+ * Un identifiant Telegram numérique ne se contacte pas depuis un compte
+ * personnel : c'est la question qui revient devant chaque client sans pseudo.
+ * Le bot, lui, le peut — il a déjà une conversation ouverte avec ce client,
+ * c'est même d'elle que vient l'identifiant. Le message par le bot est donc
+ * proposé en premier, et c'est le seul chemin qui marche pour tout le monde.
+ */
+function joindreBloc(fiche) {
+  const bloc = document.createElement('div');
+  const id = String(fiche.id);
+
+  bloc.innerHTML =
+    `<p class="a-client__id">Identifiant Telegram <code>${escapeHtml(id)}</code>` +
+    `<button class="a-btn a-btn--mince" type="button" data-copier>⧉ copier</button></p>` +
+    (fiche.username
+      ? `<p class="a-client__gris">Pseudo <b>@${escapeHtml(fiche.username)}</b> — joignable aussi depuis ton compte.</p>`
+      : `<p class="a-client__gris">Pas de pseudo public : un identifiant numérique ne s'écrit pas depuis ton compte ` +
+        `personnel. Le bot, lui, a déjà une conversation ouverte avec ce client.</p>`) +
+    '<div class="a-client__joindre-actions"></div>' +
+    '<div class="a-compose" hidden>' +
+    `<textarea class="a-compose__texte" rows="3" maxlength="3500" placeholder="Ton message, envoyé par le bot…"></textarea>` +
+    '<div class="a-compose__bar">' +
+    '<button class="a-btn a-btn--ok" type="button" data-envoyer>Envoyer</button>' +
+    '<button class="a-btn" type="button" data-annuler>Annuler</button>' +
+    '<span class="a-compose__etat"></span>' +
+    '</div></div>';
+
+  const actions = bloc.querySelector('.a-client__joindre-actions');
+  const compose = bloc.querySelector('.a-compose');
+  const texte = bloc.querySelector('.a-compose__texte');
+  const etat = bloc.querySelector('.a-compose__etat');
+
+  bloc.querySelector('[data-copier]').addEventListener('click', (ev) => copier(id, ev.currentTarget));
+
+  const parLeBot = document.createElement('button');
+  parLeBot.className = 'a-btn a-btn--ok';
+  parLeBot.type = 'button';
+  parLeBot.textContent = '💬 Écrire par le bot';
+  parLeBot.addEventListener('click', () => {
+    compose.hidden = !compose.hidden;
+    if (!compose.hidden) texte.focus();
+  });
+  actions.append(parLeBot);
+
+  if (fiche.username) {
+    const direct = document.createElement('a');
+    direct.className = 'a-btn';
+    direct.href = `https://t.me/${fiche.username}`;
+    direct.target = '_blank';
+    direct.rel = 'noopener';
+    direct.textContent = '↗ Depuis ton compte';
+    actions.append(direct);
+  }
+
+  const telephone = fiche.telephones?.[0];
+  if (telephone) {
+    const appel = document.createElement('a');
+    appel.className = 'a-btn';
+    appel.href = `tel:${telephone.replace(/\s/g, '')}`;
+    appel.textContent = '📞 Appeler';
+    actions.append(appel);
+  }
+
+  bloc.querySelector('[data-annuler]').addEventListener('click', () => {
+    compose.hidden = true;
+    etat.textContent = '';
+  });
+
+  const envoyer = bloc.querySelector('[data-envoyer]');
+  envoyer.addEventListener('click', async () => {
+    const message = texte.value.trim();
+    if (!message) {
+      etat.textContent = 'Écris quelque chose.';
+      etat.className = 'a-compose__etat a-compose__etat--ko';
+      return;
+    }
+    envoyer.disabled = true;
+    etat.className = 'a-compose__etat';
+    etat.textContent = 'Envoi…';
+    try {
+      await api(`/clients/${encodeURIComponent(id)}/message`, { method: 'POST', body: { texte: message } });
+      etat.className = 'a-compose__etat a-compose__etat--ok';
+      etat.textContent = '✅ Envoyé. Sa réponse arrivera dans ta conversation avec le bot.';
+      texte.value = '';
+      haptic('success');
+    } catch (err) {
+      etat.className = 'a-compose__etat a-compose__etat--ko';
+      etat.textContent = err.message;
+    }
+    envoyer.disabled = false;
+  });
+
+  return bloc;
+}
+
+/**
+ * Copie un identifiant, et le dit.
+ *
+ * Le retour est écrit dans le bouton plutôt que dans un toast : la fiche est
+ * longue, le bouton est sous le pouce, et un message qui s'affiche en haut de
+ * l'écran passe inaperçu. Le presse-papier est refusé dans certaines WebView —
+ * alors on le dit, plutôt que de ne rien faire.
+ */
+async function copier(valeur, bouton) {
+  const avant = bouton.textContent;
+  try {
+    await navigator.clipboard.writeText(valeur);
+    bouton.textContent = '✓ copié';
+    haptic('success');
+  } catch {
+    bouton.textContent = '⚠ sélectionne-le à la main';
+  }
+  setTimeout(() => { bouton.textContent = avant; }, 1800);
+}
+
+/**
+ * Le rythme d'un client, en français.
+ *
+ * Zéro jour entre deux commandes n'est pas une absence de rythme : c'est
+ * quelqu'un qui commande plusieurs fois dans la même journée. « tous les 0 j »
+ * ne voulait rien dire.
+ */
+function rythmeEnClair(jours) {
+  if (jours === null || jours === undefined) return '—';
+  if (jours === 0) return 'plusieurs/jour';
+  if (jours === 1) return 'chaque jour';
+  return `tous les ${jours} j`;
+}
+
+/** « il y a 3 jours » à partir d'un nombre de jours déjà calculé côté serveur. */
+function joursEnClair(jours) {
+  if (jours <= 0) return "aujourd'hui";
+  if (jours === 1) return 'hier';
+  if (jours < 31) return `il y a ${jours} j`;
+  return `il y a ${Math.round(jours / 30)} mois`;
+}
+
+async function chargerFicheTelegram(id, bloc, bouton) {
+  bouton.disabled = true;
+  bouton.textContent = '…';
+  const zone = bloc.querySelector('.a-client__telegram');
+  try {
+    const fiche = await api(`/clients/${id}/telegram`);
+    const nom = [fiche.prenom, fiche.nom].filter(Boolean).join(' ');
+    const naissance = fiche.naissance
+      ? `${String(fiche.naissance.jour).padStart(2, '0')}/${String(fiche.naissance.mois).padStart(2, '0')}` +
+        (fiche.naissance.annee ? `/${fiche.naissance.annee}` : '')
+      : null;
+
+    zone.innerHTML =
+      (fiche.photo ? `<img class="a-client__photo" src="/api/admin/clients/${encodeURIComponent(id)}/photo" alt="">` : '') +
+      '<div>' +
+      `<b>${escapeHtml(nom || 'Sans nom')}</b>` +
+      (fiche.username ? `<br>@${escapeHtml(fiche.username)}` : '<br><span class="a-client__gris">aucun pseudo</span>') +
+      (fiche.pseudos?.length ? `<br><span class="a-client__gris">aussi ${fiche.pseudos.map((u) => `@${escapeHtml(u)}`).join(', ')}</span>` : '') +
+      `<br><span class="a-client__gris">identifiant ${escapeHtml(String(fiche.id))}</span>` +
+      (naissance
+        ? `<br><span class="a-client__gris">anniversaire déclaré ${escapeHtml(naissance)}` +
+          ' — déclaratif, Telegram ne le vérifie pas</span>'
+        : '') +
+      (fiche.prive ? '<br><span class="a-client__gris">profil non retrouvable depuis un transfert</span>' : '') +
+      (fiche.bio ? `<br><span class="a-client__gris">« ${escapeHtml(fiche.bio)} »</span>` : '') +
+      '</div>';
+    zone.hidden = false;
+    bouton.remove();
+  } catch (err) {
+    zone.innerHTML = `<span class="a-client__gris">${escapeHtml(err.message)}</span>`;
+    zone.hidden = false;
+    bouton.disabled = false;
+    bouton.textContent = '👤 Fiche Telegram';
+  }
+}
+
+/** « il y a 3 jours », plutôt qu'une date à soustraire de tête. */
+function ilYA(iso) {
+  const jours = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (jours <= 0) return "aujourd'hui";
+  if (jours === 1) return 'hier';
+  if (jours < 31) return `il y a ${jours} jours`;
+  const mois = Math.round(jours / 30);
+  return `il y a ${mois} mois`;
+}
+
+function renderOrders() {
+  const list = state.orders.filter((o) => !state.orderFilter || o.status === state.orderFilter);
+  const container = $('ordersList');
+
+  if (!list.length) {
+    container.innerHTML = '<p class="a-empty">Aucune commande ici.</p>';
+    return;
+  }
+  container.replaceChildren(...list.map(orderCard));
+}
+
+function orderCard(order) {
+  const status = state.statuses[order.status];
+  const who = order.user.username ? `@${order.user.username}` : order.user.firstName ?? `#${order.user.id}`;
+  const when = new Date(order.createdAt).toLocaleString('fr-FR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+
+  const card = document.createElement('article');
+  card.className = 'a-order';
+  card.innerHTML = `
+    <div class="a-order__head">
+      <span class="a-order__ref">${escapeHtml(order.reference)}</span>
+      <span class="a-order__total">${formatPrice(order.total)}</span>
+    </div>
+    <div class="a-order__meta">${escapeHtml(who)} · ${escapeHtml(when)}
+      <span class="a-status a-status--${order.status}">${status.emoji} ${escapeHtml(status.label)}</span>
+    </div>
+    <ul class="a-order__items">
+      ${order.items
+        .map((i) => `<li>${i.quantity} × ${escapeHtml(i.name)}${i.variantLabel ? ` (${escapeHtml(i.variantLabel)})` : ''} — ${formatPrice(i.lineTotal)}</li>`)
+        .join('')}
+    </ul>
+    ${livraisonBloc(order)}
+    ${order.note ? `<p class="a-order__note">💬 ${escapeHtml(order.note)}</p>` : ''}
+    <div class="a-order__actions"></div>`;
+
+  const actions = card.querySelector('.a-order__actions');
+  for (const next of status.next) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `a-btn a-btn--sm ${next === 'annulee' ? 'a-btn--danger' : 'a-btn--primary'}`;
+    btn.textContent = `${state.statuses[next].emoji} ${state.statuses[next].label}`;
+    btn.addEventListener('click', () => changeStatus(order.reference, next, btn));
+    actions.append(btn);
+  }
+  if (!status.next.length) {
+    actions.append(Object.assign(document.createElement('span'), {
+      className: 'a-muted', textContent: 'Commande terminée.',
+    }));
+  }
+
+  // Le blocage se décide en lisant une commande : c'est là qu'on voit l'abus.
+  const blocked = (state.settings?.blocked ?? []).includes(String(order.user.id));
+  const ban = document.createElement('button');
+  ban.type = 'button';
+  ban.className = 'a-btn a-btn--sm a-btn--ghost a-order__ban';
+  ban.textContent = blocked ? '↩︎ Débloquer' : '⛔ Bloquer';
+  ban.addEventListener('click', () => toggleBlock(order.user.id, !blocked, ban));
+  actions.append(ban);
+
+  return card;
+}
+
+/**
+ * Où, quand, et pourquoi ce total-là.
+ *
+ * La carte ne montrait que la référence, le client et les articles : le
+ * vendeur qui prépare depuis la Mini App ne savait ni où livrer ni à quelle
+ * heure, et un total plus bas que la somme des lignes ressemblait à un bug.
+ */
+/**
+ * Les liens d'itinéraire d'une commande, ou rien.
+ *
+ * Le complément reste dehors : « 3e étage, code 1234 » n'aide aucun géocodeur,
+ * et beaucoup renoncent à chercher plutôt que de l'ignorer. Les commandes
+ * d'avant l'adresse découpée n'ont rien à ouvrir — leur ligne de contact
+ * s'affiche telle quelle.
+ */
+function itineraire(address) {
+  if (!address?.street || !address.city || !/^\d{2,6}$/.test(address.postalCode ?? '')) return null;
+  const q = encodeURIComponent(`${address.street}, ${address.postalCode} ${address.city}`);
+  return {
+    maps: `https://www.google.com/maps/dir/?api=1&destination=${q}`,
+    waze: `https://waze.com/ul?q=${q}&navigate=yes`,
+    plans: `https://maps.apple.com/?daddr=${q}`,
+  };
+}
+
+function livraisonBloc(order) {
+  const livraison = order.mode === 'delivery';
+  const lignes = [];
+
+  lignes.push(
+    livraison
+      ? `🛵 Livraison${order.zone ? ` — ${escapeHtml(order.zone.name)} (${escapeHtml(order.zone.postalCode ?? '')})` : ''}`
+      : '🏠 Retrait sur place'
+  );
+  if (order.slot?.label) lignes.push(`🕒 ${escapeHtml(order.slot.label)}`);
+
+  // L'adresse sur plusieurs lignes, comme sur une enveloppe, et de quoi ouvrir
+  // un itinéraire : recopier une adresse à la main dans une application de
+  // trajet, une par commande, c'est la faute de frappe assurée.
+  const route = livraison ? itineraire(order.address) : null;
+  if (route) {
+    lignes.push(`📍 ${escapeHtml(order.address.street)}`);
+    if (order.address.complement) lignes.push(`&nbsp;&nbsp;&nbsp;${escapeHtml(order.address.complement)}`);
+    lignes.push(`&nbsp;&nbsp;&nbsp;${escapeHtml(`${order.address.postalCode} ${order.address.city}`.trim())}`);
+    if (order.phone) lignes.push(`📞 ${escapeHtml(order.phone)}`);
+    lignes.push(
+      '<span class="a-route">' +
+        `<a href="${escapeHtml(route.maps)}" target="_blank" rel="noopener">🗺 Maps</a>` +
+        `<a href="${escapeHtml(route.waze)}" target="_blank" rel="noopener">🚗 Waze</a>` +
+        `<a href="${escapeHtml(route.plans)}" target="_blank" rel="noopener">🧭 Plans</a>` +
+      '</span>'
+    );
+  } else if (order.contact) {
+    lignes.push(`📍 ${escapeHtml(order.contact)}`);
+  }
+
+  // Le détail du calcul n'apparaît que s'il y a quelque chose à expliquer.
+  if (order.discount || order.deliveryFee) {
+    lignes.push(`Sous-total : ${formatPrice(order.subtotal ?? order.total)}`);
+    if (order.discount) {
+      lignes.push(
+        `Remise${order.promoCode ? ` ${escapeHtml(order.promoCode)}` : ''} : −${formatPrice(order.discount)}` +
+          `${order.discountLabel ? ` (${escapeHtml(order.discountLabel)})` : ''}`
+      );
+    }
+    if (order.deliveryFee) lignes.push(`Frais de livraison : ${formatPrice(order.deliveryFee)}`);
+  }
+
+  return `<ul class="a-order__ship">${lignes.map((l) => `<li>${l}</li>`).join('')}</ul>`;
+}
+
+async function changeStatus(reference, status, button) {
+  if (status === 'annulee' && !confirm('Annuler cette commande ? Le stock sera remis en rayon.')) return;
+
+  button.disabled = true;
+  try {
+    await api(`/orders/${reference}/status`, { method: 'POST', body: { status } });
+    haptic('success');
+    toast(`${reference} → ${state.statuses[status].label}`);
+    await refreshAll();
+  } catch (err) {
+    toast(err.message);
+    button.disabled = false;
+  }
+}
+
+/* ── Stock ───────────────────────────────────────────────── */
+
+function renderStock() {
+  const query = $('stockSearch').value.trim().toLowerCase();
+  const list = state.products.filter((p) => !query || p.name.toLowerCase().includes(query));
+  const container = $('stockList');
+
+  if (!list.length) {
+    container.innerHTML = '<p class="a-empty">Aucun produit ne correspond.</p>';
+    return;
+  }
+  container.replaceChildren(...list.map(stockCard));
+}
+
+function stockCard(product) {
+  const card = document.createElement('div');
+  card.className = 'a-stock';
+  card.innerHTML = `
+    <div class="a-stock__name">
+      ${escapeHtml(product.name)}
+      ${product.visible === false ? '<span class="a-stock__hidden">MASQUÉ</span>' : ''}
+    </div>
+    <div class="a-stock__rows"></div>`;
+
+  const rows = card.querySelector('.a-stock__rows');
+  const entries = product.variants?.length
+    ? product.variants.map((v) => ({ label: v.label, variantId: v.id, stock: v.stock }))
+    : [{ label: 'Stock', variantId: null, stock: product.stock ?? 0 }];
+
+  for (const entry of entries) rows.append(stockRow(product, entry));
+  return card;
+}
+
+function stockRow(product, entry) {
+  const row = document.createElement('div');
+  row.className = 'a-stock__row';
+  if (entry.stock === 0) row.classList.add('a-stock__row--out');
+  else if (entry.stock <= LOW_STOCK) row.classList.add('a-stock__row--low');
+
+  row.innerHTML = `
+    <span class="a-stock__label">${escapeHtml(entry.label)}</span>
+    <span class="a-stepper">
+      <button type="button" data-act="minus" aria-label="Retirer">−</button>
+      <input type="number" min="0" inputmode="numeric" value="${entry.stock}" aria-label="Stock ${escapeHtml(entry.label)}">
+      <button type="button" data-act="plus" aria-label="Ajouter">+</button>
+    </span>`;
+
+  const input = row.querySelector('input');
+  const commit = async (value) => {
+    const quantity = Math.max(0, Math.floor(Number(value)));
+    if (!Number.isFinite(quantity)) return;
+    input.value = quantity;
+    try {
+      await api(`/products/${product.id}/stock`, {
+        method: 'POST',
+        body: { variantId: entry.variantId, quantity },
+      });
+      // On met le cache local à jour sans tout recharger : la saisie reste fluide.
+      entry.stock = quantity;
+      applyStockToState(product.id, entry.variantId, quantity);
+      row.classList.toggle('a-stock__row--out', quantity === 0);
+      row.classList.toggle('a-stock__row--low', quantity > 0 && quantity <= LOW_STOCK);
+      renderBoard();
+      haptic('light');
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  row.querySelector('[data-act="minus"]').addEventListener('click', () => commit(Number(input.value) - 1));
+  row.querySelector('[data-act="plus"]').addEventListener('click', () => commit(Number(input.value) + 1));
+  input.addEventListener('change', () => commit(input.value));
+  return row;
+}
+
+function applyStockToState(productId, variantId, quantity) {
+  const product = state.products.find((p) => p.id === productId);
+  if (!product) return;
+  if (variantId) {
+    const variant = product.variants?.find((v) => v.id === variantId);
+    if (variant) variant.stock = quantity;
+  } else {
+    product.stock = quantity;
+  }
+}
+
+/* ── Produits ────────────────────────────────────────────── */
+
+/**
+ * Le mode classement : vrai quand le vendeur range son catalogue.
+ *
+ * Un mode et non une colonne posée en permanence — on ne range son catalogue
+ * qu'une fois de temps en temps, et trois boutons de plus sur chaque ligne
+ * encombreraient l'écran qu'on ouvre vingt fois par jour pour un stock.
+ */
+let enClassement = false;
+
+function basculerLeClassement() {
+  enClassement = !enClassement;
+  $('classerToggle').textContent = enClassement ? '✓ Terminer le classement' : '↕ Classer les produits';
+  $('classerToggle').classList.toggle('a-btn--primary', enClassement);
+  $('classerToggle').classList.toggle('a-btn--ghost', !enClassement);
+  $('classerAide').hidden = !enClassement;
+  renderProducts();
+}
+
+/**
+ * Déplace un produit et enregistre l'ordre entier.
+ *
+ * L'ordre part en entier, pas « monte celui-ci » : deux écrans d'admin
+ * ouverts en même temps, ou un écran resté sur un catalogue d'avant-hier,
+ * et une liste partielle ferait disparaître les produits qu'elle ne nomme
+ * pas. Le serveur refuse d'ailleurs tout ce qui n'est pas une permutation.
+ *
+ * L'affichage bouge d'abord : ranger vingt produits en attendant le réseau à
+ * chaque flèche est un supplice, et le serveur refuse proprement — on remet
+ * alors la liste telle qu'il la connaît.
+ */
+async function deplacerProduit(id, vers) {
+  const avant = state.products.map((p) => p.id);
+  const depuis = avant.indexOf(id);
+  if (depuis === -1) return;
+
+  const arrivee = vers === 'tete' ? 0 : vers === 'haut' ? depuis - 1 : depuis + 1;
+  if (arrivee < 0 || arrivee >= avant.length || arrivee === depuis) return;
+
+  const produits = [...state.products];
+  produits.splice(arrivee, 0, produits.splice(depuis, 1)[0]);
+  state.products = produits;
+  renderProducts();
+  haptic('light');
+
+  try {
+    await api('/products/ordre', { method: 'PUT', body: { ordre: produits.map((p) => p.id) } });
+  } catch (err) {
+    toast(err.message);
+    // Le serveur a refusé : on ne garde pas un écran qui montre un ordre
+    // que la boutique n'a pas.
+    await refreshAll();
+  }
+}
+
+function renderProducts() {
+  const container = $('productsList');
+  if (!state.products.length) {
+    container.innerHTML = '<p class="a-empty">Aucun produit. Crée le premier !</p>';
+    return;
+  }
+
+  container.replaceChildren(
+    ...state.products.map((product, rang) => {
+      const total = product.variants?.length
+        ? product.variants.reduce((sum, v) => sum + v.stock, 0)
+        : product.stock ?? 0;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `a-product ${product.visible === false ? 'a-product--hidden' : ''}`.trim();
+      btn.innerHTML = `
+        <span class="a-product__art"><img src="${product.image}" alt=""></span>
+        <span class="a-product__info">
+          ${enClassement && rang === 0 ? '<span class="a-rang__tete">En avant</span>' : ''}
+          <span class="a-product__name">${escapeHtml(product.name)}</span>
+          <span class="a-product__meta">${formatPrice(product.price)} · ${total} en stock${product.visible === false ? ' · masqué' : ''}</span>
+        </span>
+        ${enClassement ? '' : '<span aria-hidden="true">›</span>'}`;
+
+      if (!enClassement) {
+        btn.addEventListener('click', () => openEditor(product));
+        return btn;
+      }
+
+      // En classement, la ligne n'ouvre plus la fiche : ouvrir une fiche par
+      // mégarde en rangeant, c'est perdre sa place dans la liste à chaque fois.
+      btn.disabled = true;
+
+      const ligne = document.createElement('div');
+      ligne.className = `a-rang ${rang === 0 ? 'a-rang--tete' : ''}`.trim();
+      const fleches = document.createElement('span');
+      fleches.className = 'a-rang__fleches';
+
+      for (const [libelle, vers, titre, inactif] of [
+        ['⤒', 'tete', 'Mettre en avant', rang === 0],
+        ['↑', 'haut', 'Monter', rang === 0],
+        ['↓', 'bas', 'Descendre', rang === state.products.length - 1],
+      ]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'a-rang__btn';
+        b.textContent = libelle;
+        b.title = titre;
+        b.setAttribute('aria-label', `${titre} — ${product.name}`);
+        b.disabled = inactif;
+        b.addEventListener('click', () => deplacerProduit(product.id, vers));
+        fleches.append(b);
+      }
+
+      ligne.append(btn, fleches);
+      return ligne;
+    })
+  );
+}
+
+/* ── Éditeur ─────────────────────────────────────────────── */
+
+/** Valeur du menu qui bascule sur la saisie libre d'un chemin de photo. */
+const CUSTOM_IMAGE = '__custom__';
+
+const IMAGES = [
+  ['/assets/products/jar.svg', 'Bocal'],
+  ['/assets/products/bud.svg', 'Fleur'],
+  ['/assets/products/bud-sativa.svg', 'Fleur sativa'],
+  ['/assets/products/hash.svg', 'Résine'],
+  ['/assets/products/cookie.svg', 'Comestible'],
+  ['/assets/products/grinder.svg', 'Grinder'],
+  ['/assets/products/box.svg', 'Carton'],
+  [CUSTOM_IMAGE, '📷 Ma photo (chemin ou adresse)'],
+];
+
+function openEditor(product) {
+  state.editing = product;
+  $('editorTitle').textContent = product ? 'Modifier' : 'Nouveau produit';
+  $('deleteProduct').hidden = !product;
+  // Un produit qui n'existe pas encore n'a pas de lien : il n'aurait nulle
+  // part où mener.
+  $('productLink').hidden = !product;
+  $('duplicateProduct').hidden = !product;
+  // Ni de galerie : un média a besoin d'un produit auquel se rattacher.
+  $('mediaBlock').hidden = !product;
+  if (product) renderMedia(product);
+  $('editorError').hidden = true;
+
+  fillSelect($('fCategory'), state.categories.map((c) => [c.id, `${c.emoji} ${c.label}`]));
+  fillSelect($('fImage'), IMAGES);
+  syncImageField();
+
+  $('fName').value = product?.name ?? '';
+  $('fShort').value = product?.short ?? '';
+  $('fDesc').value = product?.description ?? '';
+  $('fPoints').value = (product?.points ?? []).join('\n');
+  $('fCategory').value = product?.category ?? state.categories[0]?.id ?? '';
+  $('fBadge').value = product?.badge ?? '';
+  $('fRemise').value = product?.remise ?? '';
+  $('fTags').value = (product?.tags ?? []).join(', ');
+  // Une photo déposée dans le dossier n'est pas dans la liste : on bascule
+  // alors sur la saisie libre, pré-remplie avec le chemin enregistré.
+  const image = product?.image ?? IMAGES[0][0];
+  const known = IMAGES.some(([value]) => value === image);
+  $('fImage').value = known ? image : CUSTOM_IMAGE;
+  $('fImagePath').value = known ? '' : image;
+  // Comme la galerie : pas de produit, pas d'envoi possible — le fichier
+  // n'aurait aucune fiche à laquelle se rattacher.
+  $('pickImage').hidden = !product;
+  syncImageField();
+  $('fVisible').checked = product ? product.visible !== false : true;
+
+  const hasVariants = Boolean(product?.variants?.length);
+  $('fHasVariants').checked = hasVariants;
+  $('fPrice').value = hasVariants ? '' : product ? (product.price / 100).toFixed(2) : '';
+  $('fStock').value = hasVariants ? '' : product?.stock ?? 0;
+
+  $('variantRows').replaceChildren();
+  if (hasVariants) for (const v of product.variants) addVariantRow(v);
+  else addVariantRow();
+
+  syncPricingMode();
+  $('editor').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeEditor() {
+  $('editor').hidden = true;
+  document.body.style.overflow = '';
+  state.editing = null;
+}
+
+function syncPricingMode() {
+  const withVariants = $('fHasVariants').checked;
+  $('simplePricing').hidden = withVariants;
+  $('variantPricing').hidden = !withVariants;
+}
+
+function addVariantRow(variant = null) {
+  const row = document.createElement('div');
+  row.className = 'a-variant';
+  row.innerHTML = `
+    <input class="a-variant__label" placeholder="2 g" value="${escapeHtml(variant?.label ?? '')}">
+    <input class="a-variant__price" type="text" inputmode="decimal" placeholder="Prix"
+      value="${variant ? (variant.price / 100).toFixed(2) : ''}">
+    <input class="a-variant__stock" type="number" min="0" inputmode="numeric" placeholder="Stock"
+      value="${variant?.stock ?? 0}">
+    <button class="a-variant__del" type="button" aria-label="Supprimer ce format">✕</button>`;
+  row.querySelector('.a-variant__del').addEventListener('click', () => row.remove());
+  $('variantRows').append(row);
+}
+
+function collectForm() {
+  const payload = {
+    name: $('fName').value.trim(),
+    short: $('fShort').value.trim(),
+    description: $('fDesc').value.trim(),
+    // Une ligne vide entre deux points ne fait pas un point : le vendeur qui
+    // aère sa saisie ne doit pas créer une puce vide sur la fiche.
+    points: $('fPoints').value.split('\n').map((l) => l.trim()).filter(Boolean),
+    category: $('fCategory').value,
+    badge: $('fBadge').value.trim() || undefined,
+    // Toujours envoyée, même vide : c'est ce qui retire une promo. Omise,
+    // l'ancienne survivrait à l'enregistrement.
+    remise: Number($('fRemise').value) || 0,
+    tags: $('fTags').value.split(',').map((t) => t.trim()).filter(Boolean),
+    image: currentImage(),
+    visible: $('fVisible').checked,
+  };
+
+  if (!payload.image) throw new Error('Indique le chemin de la photo.');
+
+  if ($('fHasVariants').checked) {
+    payload.variants = [...document.querySelectorAll('#variantRows .a-variant')]
+      .map((row) => ({
+        label: row.querySelector('.a-variant__label').value.trim(),
+        price: toCents(row.querySelector('.a-variant__price').value),
+        stock: Number(row.querySelector('.a-variant__stock').value || 0),
+      }))
+      .filter((v) => v.label);
+    if (!payload.variants.length) throw new Error('Ajoute au moins un format.');
+    payload.price = Math.min(...payload.variants.map((v) => v.price));
+  } else {
+    payload.variants = null;
+    payload.price = toCents($('fPrice').value);
+    payload.stock = Number($('fStock').value || 0);
+  }
+
+  if (!payload.name) throw new Error('Le nom est obligatoire.');
+  if (!Number.isFinite(payload.price)) throw new Error('Prix invalide.');
+  return payload;
+}
+
+async function saveProduct() {
+  const button = $('saveProduct');
+  const error = $('editorError');
+  error.hidden = true;
+  button.disabled = true;
+
+  try {
+    const payload = collectForm();
+    const modifie = Boolean(state.editing);
+    const produit = modifie
+      ? await api(`/products/${state.editing.id}`, { method: 'PATCH', body: payload })
+      : await api('/products', { method: 'POST', body: payload });
+
+    haptic('success');
+
+    if (modifie) {
+      toast('Produit mis à jour');
+      closeEditor();
+      await refreshAll();
+      return;
+    }
+
+    // Un produit qui vient d'être créé garde son éditeur ouvert, sur lui.
+    // La galerie ne peut exister qu'une fois le produit enregistré : en
+    // refermant tout, on la cachait au moment précis où elle devenait
+    // utilisable, et personne ne revenait jamais l'ouvrir. C'est ce qui faisait
+    // croire qu'un produit ne pouvait porter qu'une seule image.
+    await refreshAll();
+    openEditor(state.products.find((p) => p.id === produit.id) ?? produit);
+    toast('Produit créé — ajoute ses photos et vidéos ci-dessous');
+    $('mediaBlock').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (err) {
+    error.textContent = err.message;
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/**
+ * Duplique la fiche ouverte, et ouvre la copie.
+ *
+ * Le nom est demandé tout de suite, et ce n'est pas une formalité :
+ * l'identifiant de la fiche s'en déduit, il sert de clé dans les commandes
+ * déjà passées, et il ne bougera plus jamais. Une copie créée sous
+ * « Purple Runtz (copie) » garderait cette adresse-là pour toujours.
+ *
+ * On ouvre la copie aussitôt : c'est ce qu'on veut faire à la seconde
+ * suivante — changer sa photo, ajuster un prix, la rendre visible. Revenir à
+ * la liste pour la retrouver serait un geste de plus, vingt fois de suite.
+ */
+async function duplicateProduct() {
+  if (!state.editing) return;
+  const source = state.editing;
+
+  const nom = window.prompt(
+    `Nom de la copie de « ${source.name} » ?\n\n` +
+      "L'adresse de la fiche se déduit de ce nom et ne changera plus ensuite.",
+    ''
+  );
+  if (nom === null) return;
+  if (!nom.trim()) return toast('La copie a besoin de son propre nom.');
+
+  const bouton = $('duplicateProduct');
+  bouton.disabled = true;
+  try {
+    const copie = await api(`/products/${source.id}/dupliquer`, {
+      method: 'POST',
+      // `api()` sérialise lui-même : lui passer une chaîne déjà sérialisée
+      // envoie du JSON dont la racine est une chaîne, qu'Express refuse.
+      body: { name: nom.trim() },
+    });
+    haptic('success');
+    await refreshAll();
+    openEditor(state.products.find((p) => p.id === copie.id) ?? copie);
+    // Dire ce qui n'a PAS été copié : le vendeur qui croit son stock repris
+    // s'en aperçoit devant une commande qu'il ne peut pas honorer.
+    toast('Copie créée — masquée, et son stock est à zéro');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function removeProduct() {
+  if (!state.editing) return;
+  if (!confirm(`Supprimer « ${state.editing.name} » ? Cette action est définitive.`)) return;
+
+  try {
+    await api(`/products/${state.editing.id}`, { method: 'DELETE' });
+    haptic('success');
+    toast('Produit supprimé');
+    closeEditor();
+    await refreshAll();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/* ── Image du produit ────────────────────────────────────── */
+
+/** Chemin retenu : le menu, ou la saisie libre quand « Ma photo » est choisi. */
+function currentImage() {
+  if ($('fImage').value !== CUSTOM_IMAGE) return $('fImage').value;
+  return $('fImagePath').value.trim();
+}
+
+function syncImageField() {
+  $('imagePathField').hidden = $('fImage').value !== CUSTOM_IMAGE;
+  // L'aperçu montre ce que verront les clients dans la grille.
+  const source = currentImage();
+  const apercu = $('fImageApercu');
+  apercu.src = source || '/assets/products/box.svg';
+  apercu.alt = '';
+}
+
+/* ── Réglages ────────────────────────────────────────────── */
+
+const DAYS = [
+  ['lun', 'Lundi'], ['mar', 'Mardi'], ['mer', 'Mercredi'], ['jeu', 'Jeudi'],
+  ['ven', 'Vendredi'], ['sam', 'Samedi'], ['dim', 'Dimanche'],
+];
+
+/**
+ * L'entretien automatique : ses deux interrupteurs, et ce qu'il a fait.
+ *
+ * Le journal en bas n'est pas décoratif. Une besogne qui se fait toute seule
+ * est une besogne dont on ne sait rien : sans une ligne qui dit « dernière
+ * sauvegarde le 25 septembre », le vendeur découvre que la minuterie ne
+ * tournait plus le jour où il en a besoin, c'est-à-dire trop tard.
+ */
+/** Enregistre les trois réglages d'entretien, et redit ce que le serveur a retenu. */
+async function enregistrerLEntretien() {
+  try {
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        entretien: {
+          sauvegardeAuto: $('fSauvegardeAuto').checked,
+          oubliAuto: $('fOubliAuto').checked,
+          oubliJours: Number($('fOubliJours').value),
+        },
+      },
+    });
+    // On réaffiche ce que le serveur a gardé, et non ce qui a été tapé : le
+    // plancher de sept jours se voit ainsi tout de suite, au lieu de laisser
+    // croire que « 2 » a été accepté.
+    renderEntretien(state.settings.entretien ?? {}, state.entretien);
+    toast('Entretien mis à jour');
+  } catch (err) {
+    toast(err.message);
+    renderEntretien(state.settings?.entretien ?? {}, state.entretien);
+  }
+}
+
+function renderEntretien(reglages, journal) {
+  $('fSauvegardeAuto').checked = reglages.sauvegardeAuto !== false;
+  $('fOubliAuto').checked = reglages.oubliAuto === true;
+  $('fOubliJours').value = reglages.oubliJours ?? 30;
+  // Le délai ne se règle que si l'oubli est allumé : un champ actif sous une
+  // case décochée laisse croire qu'il s'applique.
+  $('fOubliJours').disabled = reglages.oubliAuto !== true;
+
+  const ligne = $('entretienJournal');
+  if (!ligne) return;
+  if (!journal) {
+    ligne.textContent = '';
+    return;
+  }
+  const dire = (jour) => (jour ? `le ${jour}` : 'jamais encore');
+  ligne.innerHTML =
+    `Dernière sauvegarde : <b>${escapeHtml(dire(journal.sauvegarde))}</b>. ` +
+    `Dernier oubli : <b>${escapeHtml(dire(journal.oubli))}</b>.` +
+    (journal.derniereErreur
+      ? ` <b class="a-rouge">Dernier échec : ${escapeHtml(journal.derniereErreur)}</b>`
+      : '');
+}
+
+function renderSettings() {
+  const settings = state.settings;
+  if (!settings) return;
+
+  renderFeatures();
+  renderLinkTargets();
+  renderMusique();
+  renderCommandes();
+
+  $('fAdminChat').value = settings.contact?.adminChatId ?? '';
+  $('fSellerUsername').value = settings.contact?.sellerUsername ?? '';
+
+  const opening = settings.opening ?? { open: true, hours: {} };
+  $('fOpen').checked = Boolean(opening.open);
+  $('fClosedMessage').value = opening.message ?? '';
+  $('fTimezone').value = opening.hours?.timezone ?? 'Europe/Paris';
+  // La grille ne s'affiche que si les horaires sont allumés : la régler pour
+  // rien donnerait l'impression qu'ils s'appliquent.
+  $('hoursBlock').hidden = !settings.features?.hours;
+  renderHours(opening.hours?.days ?? {});
+
+  const fulfillment = settings.fulfillment ?? {};
+  $('fPickup').checked = Boolean(fulfillment.pickup);
+  $('fDelivery').checked = Boolean(fulfillment.delivery);
+  $('fDeliveryFee').value = ((fulfillment.deliveryFee ?? 0) / 100).toFixed(2);
+  $('fFreeFrom').value = fulfillment.freeDeliveryFrom === null || fulfillment.freeDeliveryFrom === undefined
+    ? ''
+    : (fulfillment.freeDeliveryFrom / 100).toFixed(2);
+  $('fMinimum').value = ((fulfillment.minimumOrder ?? 0) / 100).toFixed(2);
+
+  renderAnnonces();
+  compterAudience();
+  renderZones(settings.zones ?? []);
+  renderSlots(settings.slots ?? {});
+  renderTiers(settings.discounts?.tiers ?? []);
+  renderPromos();
+
+  renderVerifications();
+  $('fOrdersPerHour').value = settings.limits.ordersPerHour;
+  $('fLowStock').value = settings.alerts?.lowStock ?? 3;
+  $('fPromoActif').checked = settings.promoBandeau?.actif !== false;
+  $('fPromoTitre').value = settings.promoBandeau?.titre ?? '';
+  renderEntretien(settings.entretien ?? {}, state.entretien);
+  if (!$('fPurgeDate').value) {
+    const troisMois = new Date(Date.now() - 90 * 86400000);
+    $('fPurgeDate').value = troisMois.toISOString().slice(0, 10);
+  }
+  syncPurgeMode();
+  $('fUnitsPerOrder').value = settings.limits.unitsPerOrder;
+
+  const list = $('blockedList');
+  if (!settings.blocked.length) {
+    list.replaceChildren(Object.assign(document.createElement('li'), {
+      className: 'a-empty', textContent: 'Personne n\'est bloqué.',
+    }));
+    return;
+  }
+
+  list.replaceChildren(
+    ...settings.blocked.map((id) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>#${escapeHtml(id)}</span>`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'a-btn a-btn--sm a-btn--ghost';
+      btn.textContent = 'Débloquer';
+      btn.addEventListener('click', () => toggleBlock(id, false, btn));
+      li.append(btn);
+      return li;
+    })
+  );
+}
+
+function renderHours(days) {
+  $('hoursRows').replaceChildren(
+    ...DAYS.map(([key, label]) => {
+      const slot = days[key] ?? { closed: false, from: '10:00', to: '22:00' };
+      const row = document.createElement('div');
+      row.className = 'a-hours';
+      row.dataset.day = key;
+      row.innerHTML = `
+        <span class="a-hours__day">${label}</span>
+        <input class="a-hours__from" type="time" value="${escapeHtml(slot.from ?? '10:00')}" aria-label="Ouverture ${label}">
+        <input class="a-hours__to" type="time" value="${escapeHtml(slot.to ?? '22:00')}" aria-label="Fermeture ${label}">
+        <label class="a-hours__closed"><input type="checkbox" ${slot.closed ? 'checked' : ''}> fermé</label>`;
+
+      const inputs = row.querySelectorAll('input[type="time"]');
+      const closed = row.querySelector('.a-hours__closed input');
+      const sync = () => inputs.forEach((i) => { i.disabled = closed.checked; });
+      closed.addEventListener('change', sync);
+      sync();
+      return row;
+    })
+  );
+}
+
+/**
+ * Enregistre le compte vers lequel part le bouton « Commander ».
+ *
+ * On renvoie ce que le serveur a retenu dans le champ, pas ce que le vendeur
+ * a tapé : il colle le plus souvent le lien complet de partage, le serveur
+ * n'en garde que le pseudo, et sans ce retour l'écran continuerait d'afficher
+ * une URL qui n'est plus ce qui est enregistré.
+ */
+async function saveContact() {
+  const button = $('saveContact');
+  button.disabled = true;
+  try {
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        contact: {
+          adminChatId: $('fAdminChat').value.trim(),
+          sellerUsername: $('fSellerUsername').value.trim(),
+        },
+      },
+    });
+    renderSettings();
+    // On dit ce qui a été retenu, et d'où ça vient : un champ laissé vide
+    // n'est pas un réglage perdu, c'est le .env qui reprend la main — et
+    // c'est exactement ce qu'on ne devine pas en regardant un champ vide.
+    const c = state.settings.contact ?? {};
+    toast(c.adminChatId ? `Alertes vers ${c.adminChatId}` : 'Alertes selon le .env');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveOpening() {
+  const button = $('saveOpening');
+  button.disabled = true;
+  try {
+    const days = Object.fromEntries(
+      [...$('hoursRows').children].map((row) => [
+        row.dataset.day,
+        {
+          closed: row.querySelector('.a-hours__closed input').checked,
+          from: row.querySelector('.a-hours__from').value,
+          to: row.querySelector('.a-hours__to').value,
+        },
+      ])
+    );
+
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        opening: {
+          open: $('fOpen').checked,
+          message: $('fClosedMessage').value.trim(),
+          hours: { timezone: $('fTimezone').value.trim(), days },
+        },
+      },
+    });
+    renderSettings();
+    toast($('fOpen').checked ? 'Boutique ouverte' : 'Boutique fermée');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveFulfillment() {
+  const button = $('saveFulfillment');
+  button.disabled = true;
+  try {
+    const franco = $('fFreeFrom').value.trim();
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        fulfillment: {
+          pickup: $('fPickup').checked,
+          delivery: $('fDelivery').checked,
+          deliveryFee: montantOuZero($('fDeliveryFee').value),
+          // Champ vide : pas de franco du tout, ce qui n'est pas la même
+          // chose qu'un franco à 0 € (livraison toujours offerte).
+          freeDeliveryFrom: franco === '' ? null : toCents(franco),
+          minimumOrder: montantOuZero($('fMinimum').value),
+        },
+      },
+    });
+    renderSettings();
+    toast('Livraison enregistrée');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveGuards() {
+  const button = $('saveSettings');
+  button.disabled = true;
+  try {
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        limits: {
+          ordersPerHour: Number($('fOrdersPerHour').value),
+          unitsPerOrder: Number($('fUnitsPerOrder').value),
+        },
+        alerts: { lowStock: Number($('fLowStock').value) },
+      },
+    });
+    renderSettings();
+    toast('Réglages enregistrés');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function enregistrerLeBandeau() {
+  const button = $('savePromoBandeau');
+  button.disabled = true;
+  try {
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: { promoBandeau: { actif: $('fPromoActif').checked, titre: $('fPromoTitre').value } },
+    });
+    renderSettings();
+    toast('Bandeau enregistré');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ── Annonces ────────────────────────────────────────────── */
+
+/**
+ * Combien de clients recevraient l'annonce, avec les critères courants.
+ *
+ * Affiché avant d'écrire : le vendeur doit savoir s'il parle à trois personnes
+ * ou à trois cents avant de choisir son ton — et avant d'appuyer.
+ */
+let audienceTimer;
+function compterAudience() {
+  clearTimeout(audienceTimer);
+  audienceTimer = setTimeout(async () => {
+    const zone = $('announceAudience');
+    const params = new URLSearchParams();
+    if ($('fAnnounceDays').value) params.set('depuisJours', $('fAnnounceDays').value);
+    if ($('fAnnounceMin').value) params.set('minCommandes', $('fAnnounceMin').value);
+
+    try {
+      const r = await api(`/announcements/audience?${params}`);
+      zone.textContent = r.total
+        ? `${r.total} client(s) recevraient ce message${r.apercu.length ? ` — ${r.apercu.join(', ')}${r.total > r.apercu.length ? '…' : ''}` : ''}.`
+        : 'Personne ne correspond à ces critères pour le moment.';
+    } catch (err) {
+      zone.textContent = err.message;
+    }
+  }, 350);
+}
+
+async function envoyerAnnonce() {
+  const texte = $('fAnnounce').value.trim();
+  if (texte.length < 10) return toast('Une annonce fait au moins dix caractères.');
+
+  const cibles = $('announceAudience').textContent;
+  if (!confirm(`Envoyer cette annonce ?\n\n${cibles}`)) return;
+
+  const bouton = $('sendAnnounce');
+  bouton.disabled = true;
+  try {
+    const r = await api('/announcements', {
+      method: 'POST',
+      body: {
+        texte,
+        depuisJours: $('fAnnounceDays').value || undefined,
+        minCommandes: $('fAnnounceMin').value || undefined,
+        force: $('fAnnounceForce').checked,
+      },
+    });
+    $('fAnnounce').value = '';
+    $('fAnnounceForce').checked = false;
+    toast(`Annonce partie vers ${r.cibles} client(s)`);
+    haptic('success');
+    // L'envoi continue en arrière-plan : on relit l'historique un peu plus
+    // tard pour afficher le nombre réellement reçu.
+    setTimeout(async () => {
+      state.annonces = await api('/announcements').catch(() => state.annonces);
+      renderAnnonces();
+    }, 4000);
+    state.annonces = await api('/announcements').catch(() => state.annonces);
+    renderAnnonces();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+function renderAnnonces() {
+  const liste = $('announceHistory');
+  const envois = state.annonces ?? [];
+
+  if (!envois.length) {
+    liste.replaceChildren(Object.assign(document.createElement('li'), {
+      className: 'a-empty', textContent: 'Aucune annonce envoyée.',
+    }));
+    return;
+  }
+
+  liste.replaceChildren(
+    ...envois.map((envoi) => {
+      const li = document.createElement('li');
+      const quand = new Date(envoi.envoyeLe).toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+      });
+      const resultat = envoi.recus === null
+        ? `envoi en cours vers ${envoi.cibles}`
+        : `${envoi.recus} reçue(s)${envoi.echecs ? `, ${envoi.echecs} échec(s)` : ''}`;
+
+      const info = document.createElement('span');
+      info.className = 'a-promo';
+      info.innerHTML =
+        `<span class="a-promo__meta">${escapeHtml(quand)} · ${escapeHtml(resultat)}</span>` +
+        `<span>${escapeHtml(envoi.texte.slice(0, 90))}${envoi.texte.length > 90 ? '…' : ''}</span>`;
+      li.append(info);
+      return li;
+    })
+  );
+}
+
+/* ── Galerie d'un produit ────────────────────────────────── */
+
+/**
+ * Liste les médias de la fiche, vignettes comprises.
+ *
+ * On montre la vraie image plutôt que son adresse : c'est la seule façon de
+ * vérifier d'un coup d'œil qu'on a bien mis la bonne, et de repérer celle qui
+ * ne charge pas.
+ */
+function renderMedia(product) {
+  state.editing = product;
+  const liste = $('mediaList');
+  const medias = product.media ?? [];
+  const plafond = state.mediaMax ?? 8;
+
+  const formats = product.variants?.length ?? 0;
+  $('mediaHint').textContent = medias.length
+    ? `${medias.length} média${medias.length > 1 ? 's' : ''} sur ${plafond}. Le premier s'affiche en premier dans la fiche.` +
+      (formats
+        ? ' Rattache une photo à un format : la fiche s\'ouvrira dessus quand le client choisira cette variété.'
+        : '')
+    : `Jusqu'à ${plafond} médias mélangés — photos, vidéos et GIF animés — dans l'ordre que tu veux.` +
+      (formats ? ' Chacun peut être rattaché à un format.' : '') +
+      ' Un GIF tourne tout seul dans la fiche, et remplace la vignette fixe du' +
+      ' catalogue : c’est le moyen le plus court de faire bouger une carte.' +
+      ' Tu peux aussi les envoyer au bot, avec le nom du produit en légende.';
+
+  if (!medias.length) return liste.replaceChildren();
+
+  liste.replaceChildren(
+    ...medias.map((media, rang) => {
+      const item = document.createElement('div');
+      item.className = 'a-media__item';
+
+      const vignette = document.createElement('span');
+      vignette.className = 'a-media__vignette';
+      const source = media.url ?? `/api/media/${product.id}/${rang}`;
+      // Un GIF déposé au bot est revenu en MP4 : il se montre comme une vidéo.
+      // Un GIF resté fichier se montre comme une image, et s'anime tout seul.
+      const estFichierGif = /\.gif($|[?#])/i.test(String(media.url ?? ''));
+      if (media.kind === 'video' || (media.kind === 'gif' && !estFichierGif)) {
+        // `preload=metadata` : on veut la première image, pas la vidéo entière.
+        // Et la vignette de Telegram si on l'a, qui arrive avant tout le reste.
+        const v = document.createElement('video');
+        v.src = source;
+        if (media.thumbFileId) v.poster = `/api/media/${product.id}/${rang}/apercu`;
+        v.preload = 'metadata';
+        v.muted = true;
+        vignette.append(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = source;
+        img.alt = '';
+        // Une adresse qui ne charge pas doit se voir, pas laisser un carré vide.
+        img.addEventListener('error', () => {
+          vignette.replaceChildren();
+          vignette.textContent = '⚠';
+          vignette.title = 'Ce média ne se charge pas';
+        });
+        vignette.append(img);
+      }
+
+      const texte = document.createElement('span');
+      texte.className = 'a-media__texte';
+      texte.innerHTML =
+        `<b>${rang + 1}. ${{ video: '🎬 Vidéo', gif: '🌀 GIF' }[media.kind] ?? '🖼 Photo'}` +
+        `${rang === 0 ? ' · en tête' : ''}</b>` +
+        `<span>${escapeHtml(media.url ?? 'envoyé au bot')}</span>`;
+
+      // Le format auquel ce média est rattaché. N'apparaît que si le produit a
+      // des formats : sur un produit unique, ce menu ne proposerait rien.
+      if (product.variants?.length) {
+        const choix = document.createElement('select');
+        choix.className = 'a-media__format';
+        choix.setAttribute('aria-label', 'Format montré par ce média');
+        choix.innerHTML =
+          '<option value="">Tous les formats</option>' +
+          product.variants
+            .map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.label)}</option>`)
+            .join('');
+        choix.value = media.variantId ?? '';
+        choix.addEventListener('change', () => rattacherMedia(product.id, rang, choix.value, choix));
+        texte.append(choix);
+      }
+
+      const actions = document.createElement('span');
+      actions.className = 'a-media__actions';
+
+      const monter = document.createElement('button');
+      monter.type = 'button';
+      monter.textContent = '↑';
+      monter.title = 'Monter';
+      monter.disabled = rang === 0;
+      monter.addEventListener('click', () => deplacerMedia(product.id, rang, rang - 1));
+
+      const descendre = document.createElement('button');
+      descendre.type = 'button';
+      descendre.textContent = '↓';
+      descendre.title = 'Descendre';
+      descendre.disabled = rang === medias.length - 1;
+      descendre.addEventListener('click', () => deplacerMedia(product.id, rang, rang + 1));
+
+      const retirer = document.createElement('button');
+      retirer.type = 'button';
+      retirer.textContent = '✕';
+      retirer.title = 'Retirer';
+      retirer.addEventListener('click', () => retirerMedia(product.id, rang));
+
+      actions.append(monter, descendre);
+
+      // Une vidéo d'avant, sans aperçu : la boutique peut aller le chercher.
+      // Sans lui, sa carte reste vide le temps que la vidéo arrive.
+      if (media.kind === 'video' && media.fileId && !media.thumbFileId) {
+        const apercu = document.createElement('button');
+        apercu.type = 'button';
+        apercu.textContent = '🖼';
+        apercu.title = "Retrouver l'aperçu de cette vidéo";
+        apercu.addEventListener('click', () => retrouverApercu(product.id, rang, apercu));
+        actions.append(apercu);
+      }
+
+      actions.append(retirer);
+      item.append(vignette, texte, actions);
+      return item;
+    })
+  );
+}
+
+/**
+ * Va chercher chez Telegram l'aperçu d'une vidéo déjà en galerie.
+ *
+ * Le bouton disparaît de lui-même une fois l'aperçu trouvé : il n'y a plus
+ * rien à demander.
+ */
+async function retrouverApercu(id, rang, bouton) {
+  bouton.disabled = true;
+  bouton.textContent = '…';
+  try {
+    const produit = await api(`/products/${id}/media/${rang}/apercu`, { method: 'POST' });
+    await rafraichirApresMedia(produit);
+    toast('Aperçu retrouvé');
+    haptic('success');
+  } catch (err) {
+    bouton.disabled = false;
+    bouton.textContent = '🖼';
+    toast(err.message);
+  }
+}
+
+/**
+ * Envoie les fichiers choisis dans la galerie du téléphone.
+ *
+ * `XMLHttpRequest` plutôt que `fetch` : lui seul sait dire où en est l'envoi.
+ * Sur un réseau de mobile, une vidéo de vingt mégaoctets prend une minute, et
+ * un bouton grisé sans nouvelle pousse à recharger la page en plein transfert.
+ *
+ * Les fichiers partent l'un après l'autre : en parallèle, ils se disputeraient
+ * la bande passante et l'ordre d'arrivée dans la galerie serait celui du
+ * hasard, pas celui de la sélection.
+ */
+async function envoyerDepuisLaGalerie(event) {
+  const fichiers = [...(event.target.files ?? [])];
+  event.target.value = ''; // sans ça, rechoisir le même fichier ne déclencherait rien
+  if (!fichiers.length) return;
+
+  const zone = $('mediaEnvoi');
+  const barre = $('mediaProgres');
+  const etat = $('mediaEtat');
+  zone.hidden = false;
+  $('pickMedia').disabled = true;
+
+  let envoyes = 0;
+  try {
+    for (const [rang, fichier] of fichiers.entries()) {
+      const suite = fichiers.length > 1 ? ` (${rang + 1}/${fichiers.length})` : '';
+      etat.textContent = `Envoi${suite}…`;
+      barre.style.width = '0%';
+
+      const produit = await televerser(fichier, (part) => {
+        barre.style.width = `${Math.round(part * 100)}%`;
+        etat.textContent = part >= 1 ? `Traitement${suite}…` : `Envoi${suite} · ${Math.round(part * 100)} %`;
+      });
+
+      envoyes++;
+      await rafraichirApresMedia(produit);
+    }
+    toast(envoyes > 1 ? `${envoyes} médias ajoutés` : 'Média ajouté');
+    haptic('success');
+  } catch (err) {
+    // On dit combien sont passés : après trois vidéos dont la deuxième échoue,
+    // « erreur » tout seul ne dit pas où on en est.
+    toast(envoyes ? `${envoyes} envoyé(s), puis : ${err.message}` : err.message);
+  } finally {
+    zone.hidden = true;
+    barre.style.width = '0%';
+    $('pickMedia').disabled = false;
+  }
+}
+
+/** Un fichier, en corps brut, vers un produit. */
+function televerser(fichier, avance, chemin = 'media') {
+  const nom = encodeURIComponent(fichier.name || 'media');
+  return televerserVers(`/api/admin/products/${state.editing.id}/${chemin}/upload?nom=${nom}`, fichier, avance);
+}
+
+/**
+ * Le même envoi, vers l'adresse qu'on veut.
+ *
+ * `fetch` ne sait pas rapporter l'avancement d'un envoi : c'est la seule
+ * raison pour laquelle cette fonction utilise encore XMLHttpRequest. Sur une
+ * connexion de téléphone, un morceau de trois mégaoctets met le temps qu'il
+ * met, et une barre qui n'avance pas passe pour une application gelée.
+ */
+function televerserVers(url, fichier, avance) {
+  return new Promise((resolve, rejeter) => {
+    const requete = new XMLHttpRequest();
+    requete.open('POST', url);
+    requete.setRequestHeader('Content-Type', fichier.type || 'application/octet-stream');
+    requete.setRequestHeader('X-Telegram-Init-Data', tg?.initData ?? '');
+
+    requete.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) avance(e.loaded / e.total);
+    });
+
+    requete.addEventListener('load', () => {
+      let corps = {};
+      try { corps = JSON.parse(requete.responseText); } catch {}
+      if (requete.status >= 200 && requete.status < 300) return resolve(corps);
+      rejeter(new Error(corps.error ?? `Envoi refusé (${requete.status})`));
+    });
+    requete.addEventListener('error', () => rejeter(new Error('Réseau interrompu pendant l envoi.')));
+    requete.addEventListener('abort', () => rejeter(new Error('Envoi interrompu.')));
+
+    requete.send(fichier);
+  });
+}
+
+/**
+ * Envoie la vignette du produit depuis la galerie du téléphone.
+ *
+ * Un seul fichier : une vignette, par définition, ne se choisit pas à
+ * plusieurs. Le reste emprunte le même chemin que la galerie.
+ */
+async function envoyerLaVignette(event) {
+  const fichier = event.target.files?.[0];
+  event.target.value = '';
+  if (!fichier) return;
+
+  const zone = $('imageEnvoi');
+  const barre = $('imageProgres');
+  zone.hidden = false;
+  $('pickImage').disabled = true;
+
+  try {
+    const produit = await televerser(
+      fichier,
+      (part) => {
+        barre.style.width = `${Math.round(part * 100)}%`;
+        $('imageEtat').textContent = part >= 1 ? 'Traitement…' : `Envoi · ${Math.round(part * 100)} %`;
+      },
+      'image'
+    );
+
+    // Le formulaire suit : sans ça, enregistrer la fiche réécrirait l'ancienne
+    // image par-dessus celle qu'on vient d'envoyer.
+    state.editing = produit;
+    montrerImage(produit.image);
+    const catalog = await api('/catalog');
+    state.products = catalog.products;
+    renderProducts();
+    renderStock();
+
+    toast('Image principale mise à jour');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    zone.hidden = true;
+    barre.style.width = '0%';
+    $('pickImage').disabled = false;
+  }
+}
+
+/**
+ * Aligne le menu, le champ d'adresse et l'aperçu sur une image donnée.
+ *
+ * Une photo envoyée au bot n'est dans aucune des propositions du menu : elle
+ * bascule donc sur « ma photo », dont le champ porte alors l'adresse servie
+ * par la boutique.
+ */
+function montrerImage(image) {
+  const connue = IMAGES.some(([valeur]) => valeur === image);
+  $('fImage').value = connue ? image : CUSTOM_IMAGE;
+  $('fImagePath').value = connue ? '' : image;
+  syncImageField();
+}
+
+/**
+ * Devine la nature d'un média d'après son adresse.
+ *
+ * Le menu reste maître : on ne fait que le pré-remplir pendant la saisie, et
+ * le vendeur peut toujours corriger. Sans ça, coller l'adresse d'un GIF
+ * laissait le menu sur « Photo » — la galerie l'affichait quand même, mais il
+ * ne prenait pas la vignette du catalogue, et personne ne comprenait pourquoi
+ * la carte ne bougeait pas.
+ */
+function devinerLaNature(url) {
+  const adresse = String(url ?? '').toLowerCase();
+  if (/\.gif($|[?#])/.test(adresse)) return 'gif';
+  if (/\.(mp4|webm|mov|m4v)($|[?#])/.test(adresse)) return 'video';
+  if (/\.(jpe?g|png|webp|avif|svg)($|[?#])/.test(adresse)) return 'photo';
+  return null;
+}
+
+async function ajouterMedia() {
+  const url = $('fMediaUrl').value.trim();
+  if (!url) return toast("Donne l'adresse du média");
+
+  const bouton = $('addMedia');
+  bouton.disabled = true;
+  try {
+    const produit = await api(`/products/${state.editing.id}/media`, {
+      method: 'POST',
+      body: { kind: $('fMediaKind').value, url },
+    });
+    $('fMediaUrl').value = '';
+    await rafraichirApresMedia(produit);
+    toast('Média ajouté');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function retirerMedia(id, rang) {
+  try {
+    await rafraichirApresMedia(await api(`/products/${id}/media/${rang}`, { method: 'DELETE' }));
+    toast('Média retiré');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/**
+ * Rattache un média à un format, ou l'en détache.
+ *
+ * C'est ce lien qui fait qu'une fiche à trois variétés montre la bonne photo
+ * quand le client choisit la sienne.
+ */
+async function rattacherMedia(id, rang, variantId, champ) {
+  champ.disabled = true;
+  try {
+    const produit = await api(`/products/${id}/media/${rang}/format`, {
+      method: 'PUT',
+      body: { variantId },
+    });
+    await rafraichirApresMedia(produit);
+    toast(variantId ? 'Média rattaché au format' : 'Média remis sur tous les formats');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+    champ.disabled = false;
+  }
+}
+
+async function deplacerMedia(id, de, vers) {
+  const medias = state.editing?.media ?? [];
+  const ordre = medias.map((_, i) => i);
+  [ordre[de], ordre[vers]] = [ordre[vers], ordre[de]];
+  try {
+    await rafraichirApresMedia(await api(`/products/${id}/media`, { method: 'PUT', body: { ordre } }));
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Remet la liste à jour, et le catalogue derrière — la vignette a pu changer. */
+async function rafraichirApresMedia(produit) {
+  renderMedia(produit);
+  const catalog = await api('/catalog');
+  state.products = catalog.products;
+  renderProducts();
+  renderStock();
+}
+
+/* ── Liens directs et QR codes ───────────────────────────── */
+
+/** Ce que le dernier chargement a rendu, pour le copier sans redemander. */
+let lienCourant = null;
+
+/**
+ * Remplit le menu des destinations.
+ *
+ * Les articles masqués y figurent quand même, avec la mention : on prépare
+ * souvent le flyer avant de mettre l'article en ligne, et découvrir à ce
+ * moment-là qu'il faudra le rendre visible vaut mieux que le découvrir
+ * imprimé.
+ */
+function renderLinkTargets() {
+  const select = $('linkTarget');
+  const choisi = select.value;
+  fillSelect(select, [
+    ['', '🏪 La boutique'],
+    ...state.products.map((p) => [p.id, `${p.name}${p.visible === false ? ' (masqué)' : ''}`]),
+  ]);
+  select.value = state.products.some((p) => p.id === choisi) ? choisi : '';
+}
+
+async function chargerLien() {
+  const cible = $('linkTarget').value;
+  const erreur = $('linkError');
+  erreur.hidden = true;
+  $('linkBox').hidden = true;
+
+  try {
+    const r = await api(`/link${cible ? `?product=${encodeURIComponent(cible)}` : ''}`);
+    lienCourant = r;
+    // Le SVG vient de notre propre générateur : il n'y a là-dedans qu'un
+    // rectangle et un chemin, tous deux faits de nombres.
+    $('linkQr').innerHTML = r.svg;
+    $('linkUrl').textContent = r.url;
+    $('linkWarn').textContent = r.hidden
+      ? "Cet article est masqué : le lien ouvrira la boutique sans le montrer. Rends-le visible avant d'imprimer."
+      : '';
+    $('linkWarn').hidden = !r.hidden;
+    $('linkBox').hidden = false;
+  } catch (err) {
+    lienCourant = null;
+    erreur.textContent = err.message;
+    erreur.hidden = false;
+  }
+}
+
+/**
+ * Copie le lien.
+ *
+ * `navigator.clipboard` n'est pas toujours là dans la WebView de Telegram :
+ * on retombe alors sur une sélection, que le vendeur copie d'un appui long.
+ */
+async function copierLien() {
+  if (!lienCourant) return;
+  try {
+    await navigator.clipboard.writeText(lienCourant.url);
+    toast('Lien copié');
+    haptic('success');
+  } catch {
+    const plage = document.createRange();
+    plage.selectNodeContents($('linkUrl'));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(plage);
+    toast('Appui long sur le lien pour le copier');
+  }
+}
+
+async function envoyerQr() {
+  const bouton = $('sendQr');
+  bouton.disabled = true;
+  try {
+    const cible = $('linkTarget').value;
+    await api('/link/send', { method: 'POST', body: { product: cible || undefined } });
+    toast('QR envoyé dans la conversation');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+/* ── Export et sauvegarde ────────────────────────────────── */
+
+/** La sauvegarde choisie, gardée le temps de la confirmation. */
+let sauvegardeChoisie = null;
+
+async function exporterCommandes() {
+  const bouton = $('exportCsv');
+  bouton.disabled = true;
+  try {
+    const r = await api('/export/orders/send', {
+      method: 'POST',
+      body: { from: $('fExportFrom').value || undefined, to: $('fExportTo').value || undefined },
+    });
+    toast(`${r.orders} commande(s) envoyées dans la conversation`);
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function envoyerSauvegarde() {
+  const bouton = $('downloadBackup');
+  bouton.disabled = true;
+  try {
+    const r = await api('/backup/send', { method: 'POST' });
+    toast(`Sauvegarde envoyée dans la conversation (${Math.round(r.octets / 1024)} Ko)`);
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+/**
+ * Lit le fichier choisi et dit ce qu'il contient.
+ *
+ * On montre le contenu avant de proposer le remplacement : restaurer efface
+ * la boutique, et personne ne doit découvrir après coup qu'il a chargé la
+ * sauvegarde du mois dernier.
+ */
+async function lireSauvegarde(event) {
+  const fichier = event.target.files?.[0];
+  event.target.value = '';
+  if (!fichier) return;
+
+  const zone = $('restorePreview');
+  zone.hidden = true;
+  sauvegardeChoisie = null;
+
+  try {
+    const texte = await fichier.text();
+    const data = JSON.parse(texte);
+    const resume = await api('/backup/inspect', { method: 'POST', body: data });
+
+    sauvegardeChoisie = data;
+    const quand = resume.exportedAt
+      ? new Date(resume.exportedAt).toLocaleString('fr-FR')
+      : 'date inconnue';
+    $('restoreSummary').textContent =
+      `Sauvegarde du ${quand} : ${resume.products} produit(s), ${resume.categories} catégorie(s), ` +
+      `${resume.orders} commande(s), ${resume.promos} code(s).`;
+    zone.hidden = false;
+  } catch (err) {
+    toast(err instanceof SyntaxError ? 'Ce fichier n\'est pas une sauvegarde.' : err.message);
+  }
+}
+
+async function restaurer() {
+  if (!sauvegardeChoisie) return;
+  if (!confirm('Remplacer toute la boutique par cette sauvegarde ? Les données actuelles seront perdues.')) return;
+
+  const bouton = $('doRestore');
+  bouton.disabled = true;
+  try {
+    const fait = await api('/backup/restore', { method: 'POST', body: sauvegardeChoisie });
+    sauvegardeChoisie = null;
+    $('restorePreview').hidden = true;
+    toast(`Restauré : ${fait.catalogue.products} produits, ${fait.commandes.orders} commandes`);
+    haptic('success');
+    await refreshAll();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+/* ── Tableau de bord des fonctionnalités ─────────────────── */
+
+function renderFeatures() {
+  const values = state.settings?.features ?? {};
+
+  $('featureList').replaceChildren(
+    ...state.featureList.map(({ key, label, hint }) => {
+      const row = document.createElement('label');
+      row.className = 'a-feature';
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = Boolean(values[key]);
+      input.addEventListener('change', () => toggleFeature(key, input));
+
+      const text = document.createElement('span');
+      text.className = 'a-feature__text';
+      text.innerHTML = `<b>${escapeHtml(label)}</b><small>${escapeHtml(hint)}</small>`;
+
+      row.append(input, text);
+      return row;
+    })
+  );
+}
+
+/**
+ * Un interrupteur s'applique tout de suite.
+ *
+ * Pas de bouton « Enregistrer » : sur un tableau de bord, un état coché mais
+ * pas encore enregistré est un piège — on croit avoir coupé une fonctionnalité
+ * qui tourne toujours. En cas d'échec, la case revient à sa position réelle.
+ */
+async function toggleFeature(key, input) {
+  const wanted = input.checked;
+  input.disabled = true;
+  try {
+    state.settings = await api('/settings', { method: 'PUT', body: { features: { [key]: wanted } } });
+    renderSettings();
+    const label = state.featureList.find((f) => f.key === key)?.label ?? key;
+    toast(`${label} ${wanted ? 'activé' : 'désactivé'}`);
+    haptic('success');
+  } catch (err) {
+    input.checked = !wanted;
+    toast(err.message);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+/* ── Zones de livraison ──────────────────────────────────── */
+
+function renderZones(zones) {
+  $('zoneRows').replaceChildren(...zones.map((zone) => zoneRow(zone)));
+}
+
+function zoneRow(zone = {}) {
+  const box = document.createElement('div');
+  box.className = 'a-zone';
+  box.innerHTML = `
+    <div class="a-zone__head">
+      <input class="a-zone__name" maxlength="40" placeholder="Nom du secteur"
+             value="${escapeHtml(zone.name ?? '')}" aria-label="Nom de la zone">
+    </div>
+    <input class="a-zone__codes" placeholder="Codes postaux : 68000, 68001…"
+           value="${escapeHtml((zone.postalCodes ?? []).join(', '))}" aria-label="Codes postaux">
+    <div class="a-row">
+      <label class="a-field"><span>Frais (€)</span>
+        <input class="a-zone__fee" type="text" inputmode="decimal"
+               value="${((zone.fee ?? 0) / 100).toFixed(2)}"></label>
+      <label class="a-field"><span>Minimum (€)</span>
+        <input class="a-zone__min" type="text" inputmode="decimal"
+               placeholder="général" value="${zone.minimumOrder == null ? '' : (zone.minimumOrder / 100).toFixed(2)}"></label>
+      <label class="a-field"><span>Franco (€)</span>
+        <input class="a-zone__franco" type="text" inputmode="decimal"
+               placeholder="général" value="${zone.freeFrom == null ? '' : (zone.freeFrom / 100).toFixed(2)}"></label>
+    </div>`;
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'a-btn a-btn--sm a-btn--danger';
+  remove.textContent = 'Retirer la zone';
+  remove.addEventListener('click', () => box.remove());
+  box.querySelector('.a-zone__head').append(remove);
+  return box;
+}
+
+function addZoneRow() {
+  $('zoneRows').append(zoneRow());
+}
+
+async function saveZones() {
+  const button = $('saveZones');
+  button.disabled = true;
+  try {
+    const zones = [...$('zoneRows').children].map((box) => ({
+      name: box.querySelector('.a-zone__name').value,
+      postalCodes: box.querySelector('.a-zone__codes').value,
+      fee: toCents(box.querySelector('.a-zone__fee').value),
+      // Vide veut dire « celui de la boutique », ce qui n'est pas zéro.
+      minimumOrder: optional(box.querySelector('.a-zone__min').value),
+      freeFrom: optional(box.querySelector('.a-zone__franco').value),
+    }));
+
+    state.settings = await api('/settings', { method: 'PUT', body: { zones } });
+    renderSettings();
+    // Une zone sans nom ou sans code postal est écartée à l'enregistrement :
+    // le dire évite de croire qu'elle est passée.
+    const gardees = state.settings.zones.length;
+    toast(gardees === zones.length ? 'Zones enregistrées' : `${gardees} zone(s) sur ${zones.length} retenue(s)`);
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function optional(value) {
+  return String(value).trim() === '' ? null : toCents(value);
+}
+
+/** Champ laissé vide : c'est zéro, et non « ne touche à rien ». */
+function montantOuZero(value) {
+  return String(value ?? '').trim() === '' ? 0 : toCents(value);
+}
+
+/* ── Créneaux ────────────────────────────────────────────── */
+
+function renderSlots(slots) {
+  $('slotsBlock').hidden = !slots.enabled;
+  $('fSlotLead').value = slots.leadMinutes ?? 60;
+  $('fSlotDays').value = slots.daysAhead ?? 7;
+
+  $('slotRows').replaceChildren(
+    ...DAYS.map(([key, label]) => {
+      const box = document.createElement('div');
+      box.className = 'a-slotday';
+      box.dataset.day = key;
+      box.innerHTML = `<div class="a-slotday__head"><span>${label}</span></div><div class="a-slotday__rows"></div>`;
+
+      const rows = box.querySelector('.a-slotday__rows');
+      for (const slot of slots.days?.[key] ?? []) rows.append(slotRow(slot));
+
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'a-btn a-btn--sm a-btn--ghost';
+      add.textContent = '+ créneau';
+      add.addEventListener('click', () => rows.append(slotRow()));
+      box.querySelector('.a-slotday__head').append(add);
+      return box;
+    })
+  );
+}
+
+function slotRow({ from = '18:00', to = '20:00', capacity = 10 } = {}) {
+  const row = document.createElement('div');
+  row.className = 'a-slot';
+  row.innerHTML = `
+    <input class="a-slot__from" type="time" value="${escapeHtml(from)}" aria-label="Début">
+    <span class="a-slot__unit">→</span>
+    <input class="a-slot__to" type="time" value="${escapeHtml(to)}" aria-label="Fin">
+    <input class="a-slot__cap" type="number" min="1" max="999" inputmode="numeric"
+           value="${Number(capacity)}" aria-label="Places">
+    <span class="a-slot__unit">pl.</span>`;
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'a-btn a-btn--sm a-btn--ghost';
+  remove.textContent = '✕';
+  remove.setAttribute('aria-label', 'Retirer ce créneau');
+  remove.addEventListener('click', () => row.remove());
+  row.append(remove);
+  return row;
+}
+
+async function saveSlots() {
+  const button = $('saveSlots');
+  button.disabled = true;
+  try {
+    const days = Object.fromEntries(
+      [...$('slotRows').children].map((box) => [
+        box.dataset.day,
+        [...box.querySelectorAll('.a-slot')].map((row) => ({
+          from: row.querySelector('.a-slot__from').value,
+          to: row.querySelector('.a-slot__to').value,
+          capacity: Number(row.querySelector('.a-slot__cap').value),
+        })),
+      ])
+    );
+
+    state.settings = await api('/settings', {
+      method: 'PUT',
+      body: {
+        slots: {
+          leadMinutes: Number($('fSlotLead').value),
+          daysAhead: Number($('fSlotDays').value),
+          days,
+        },
+      },
+    });
+    renderSettings();
+    toast('Créneaux enregistrés');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ── Remises ─────────────────────────────────────────────── */
+
+function renderTiers(tiers) {
+  $('tierRows').replaceChildren(...tiers.map((t) => tierRow(t)));
+}
+
+function tierRow({ from = 0, percent = 5 } = {}) {
+  const row = document.createElement('div');
+  row.className = 'a-tier';
+  row.innerHTML = `
+    <span class="a-tier__unit">dès</span>
+    <input class="a-tier__from" type="text" inputmode="decimal"
+           value="${(from / 100).toFixed(2)}" aria-label="Montant du palier en euros">
+    <span class="a-tier__unit">€ →</span>
+    <input class="a-tier__percent" type="number" min="1" max="90" inputmode="numeric"
+           value="${Number(percent)}" aria-label="Pourcentage de remise">
+    <span class="a-tier__unit">%</span>`;
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'a-btn a-btn--sm a-btn--ghost';
+  remove.textContent = '✕';
+  remove.setAttribute('aria-label', 'Retirer ce palier');
+  remove.addEventListener('click', () => row.remove());
+  row.append(remove);
+  return row;
+}
+
+function addTierRow() {
+  if ($('tierRows').children.length >= 5) return toast('Cinq paliers au maximum.');
+  $('tierRows').append(tierRow());
+}
+
+async function saveTiers() {
+  const button = $('saveTiers');
+  button.disabled = true;
+  try {
+    const tiers = [...$('tierRows').children].map((row) => ({
+      from: toCents(row.querySelector('.a-tier__from').value),
+      percent: Number(row.querySelector('.a-tier__percent').value),
+    }));
+    state.settings = await api('/settings', { method: 'PUT', body: { discounts: { tiers } } });
+    renderSettings();
+    toast(tiers.length ? 'Paliers enregistrés' : 'Paliers retirés');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function syncPromoValueLabel() {
+  $('fPromoValueLabel').textContent =
+    $('fPromoType').value === 'percent' ? 'Remise (%)' : 'Remise (€)';
+}
+
+function renderPromos() {
+  const list = $('promosList');
+  if (!state.promos.length) {
+    list.replaceChildren(Object.assign(document.createElement('li'), {
+      className: 'a-empty', textContent: 'Aucun code pour le moment.',
+    }));
+    return;
+  }
+
+  list.replaceChildren(
+    ...state.promos.map((promo) => {
+      const li = document.createElement('li');
+      const epuise = promo.maxUses !== null && promo.uses >= promo.maxUses;
+      const expire = promo.expiresAt && promo.expiresAt < new Date().toISOString().slice(0, 10);
+      if (!promo.active || epuise || expire) li.className = 'a-promo--off';
+
+      const valeur = promo.type === 'percent' ? `−${promo.value} %` : `−${formatPrice(promo.value)}`;
+      const details = [
+        promo.minSubtotal ? `dès ${formatPrice(promo.minSubtotal)}` : null,
+        promo.maxUses !== null ? `${promo.uses}/${promo.maxUses} usages` : `${promo.uses} usages`,
+        promo.expiresAt ? `jusqu'au ${promo.expiresAt}` : null,
+        promo.oncePerClient ? '1×/client' : null,
+        !promo.active ? 'désactivé' : epuise ? 'épuisé' : expire ? 'expiré' : null,
+      ].filter(Boolean);
+
+      const info = document.createElement('span');
+      info.className = 'a-promo';
+      info.innerHTML = `
+        <span class="a-promo__code">${escapeHtml(promo.code)} · ${escapeHtml(valeur)}</span>
+        <span class="a-promo__meta">${escapeHtml(details.join(' · '))}</span>`;
+      li.append(info);
+
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'a-btn a-btn--sm a-btn--ghost';
+      edit.textContent = 'Modifier';
+      edit.addEventListener('click', () => fillPromoForm(promo));
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'a-btn a-btn--sm a-btn--danger';
+      remove.textContent = 'Supprimer';
+      remove.addEventListener('click', () => removePromo(promo.code, remove));
+
+      li.append(edit, remove);
+      return li;
+    })
+  );
+}
+
+/** Recharge le formulaire depuis un code existant : l'enregistrer l'écrase,
+ *  en gardant son compteur d'usages. */
+function fillPromoForm(promo) {
+  $('fPromoCode').value = promo.code;
+  $('fPromoType').value = promo.type;
+  $('fPromoValue').value = promo.type === 'percent' ? promo.value : (promo.value / 100).toFixed(2);
+  $('fPromoMin').value = promo.minSubtotal ? (promo.minSubtotal / 100).toFixed(2) : '';
+  $('fPromoExpires').value = promo.expiresAt ?? '';
+  $('fPromoMaxUses').value = promo.maxUses ?? '';
+  $('fPromoOnce').checked = promo.oncePerClient;
+  $('fPromoActive').checked = promo.active;
+  syncPromoValueLabel();
+  $('fPromoCode').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+async function savePromo() {
+  const button = $('savePromo');
+  button.disabled = true;
+  try {
+    const type = $('fPromoType').value;
+    const brut = $('fPromoValue').value;
+    const min = $('fPromoMin').value.trim();
+    const maxUses = $('fPromoMaxUses').value.trim();
+
+    state.promos = await api('/promos', {
+      method: 'PUT',
+      body: {
+        code: $('fPromoCode').value,
+        type,
+        // Un pourcentage est un entier, un montant est en centimes : deux
+        // unités différentes derrière le même champ.
+        value: type === 'percent' ? Number(brut) : toCents(brut),
+        minSubtotal: min === '' ? 0 : toCents(min),
+        expiresAt: $('fPromoExpires').value || null,
+        maxUses: maxUses === '' ? null : Number(maxUses),
+        oncePerClient: $('fPromoOnce').checked,
+        active: $('fPromoActive').checked,
+      },
+    });
+    renderPromos();
+    toast('Code enregistré');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function removePromo(code, button) {
+  button.disabled = true;
+  try {
+    state.promos = await api(`/promos/${encodeURIComponent(code)}`, { method: 'DELETE' });
+    renderPromos();
+    toast('Code supprimé');
+  } catch (err) {
+    toast(err.message);
+    button.disabled = false;
+  }
+}
+
+const VERIF_LABELS = {
+  pending: '⏳ En attente',
+  approved: '✅ Validé',
+  refused: '❌ Refusé',
+};
+
+function renderVerifications() {
+  const list = $('verificationsList');
+  if (!state.verifications.length) {
+    list.replaceChildren(Object.assign(document.createElement('li'), {
+      className: 'a-empty', textContent: 'Aucune demande pour le moment.',
+    }));
+    return;
+  }
+
+  list.replaceChildren(
+    ...state.verifications.map((record) => {
+      const li = document.createElement('li');
+      const when = record.requestedAt
+        ? new Date(record.requestedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+        : '';
+      li.innerHTML = `<span>#${escapeHtml(record.id)}
+        <span class="a-muted">${escapeHtml(VERIF_LABELS[record.status] ?? record.status)}${when ? ` · ${when}` : ''}</span></span>`;
+
+      const actions = document.createElement('span');
+      actions.className = 'a-verif__actions';
+      for (const [status, label] of [['approved', '✅'], ['refused', '❌'], ['none', '↩︎']]) {
+        if (record.status === status) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'a-btn a-btn--sm a-btn--ghost';
+        btn.textContent = label;
+        btn.title = { approved: 'Valider', refused: 'Refuser', none: 'Réinitialiser' }[status];
+        btn.addEventListener('click', () => decideVerification(record.id, status, btn));
+        actions.append(btn);
+      }
+      li.append(actions);
+      return li;
+    })
+  );
+}
+
+async function decideVerification(id, status, button) {
+  button.disabled = true;
+  try {
+    await api(`/verifications/${id}`, { method: 'POST', body: { status } });
+    state.verifications = await api('/verifications');
+    renderVerifications();
+    toast('Vérification mise à jour');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+    button.disabled = false;
+  }
+}
+
+/* ── Effacer des commandes ───────────────────────────────── */
+
+/** « Tout effacer » n'a pas de date : le champ disparaît plutôt que mentir. */
+function syncPurgeMode() {
+  $('fPurgeDateField').hidden = $('fPurgeMode').value === 'tout';
+}
+
+/**
+ * Efface, ou fait oublier.
+ *
+ * Trois garde-fous avant d'écrire quoi que ce soit : le mot tapé à la main, la
+ * question posée en clair avec le nombre de commandes concernées, et la
+ * sauvegarde qui part dans la conversation. Le serveur redemande le mot de son
+ * côté — une interface se contourne, une commande curl n'a pas d'écran de
+ * confirmation.
+ */
+async function purgerLesCommandes() {
+  const mode = $('fPurgeMode').value;
+  const avant = $('fPurgeDate').value;
+  const sauvegarde = $('fPurgeBackup').checked;
+
+  if (mode !== 'tout' && !avant) {
+    toast('Choisis une date.');
+    return $('fPurgeDate').focus();
+  }
+  if ($('fPurgeConfirm').value.trim().toUpperCase() !== 'EFFACER') {
+    toast('Écris EFFACER pour confirmer.');
+    return $('fPurgeConfirm').focus();
+  }
+
+  // Combien de commandes sont concernées : « ça ne se rattrape pas » compte
+  // moins qu'un nombre. On le calcule sur ce qu'on a sous la main.
+  const concernees =
+    mode === 'tout'
+      ? state.orders.length
+      : state.orders.filter((o) => String(o.createdAt).slice(0, 10) < avant).length;
+  const geste = mode === 'anonymiser' ? 'anonymiser' : 'effacer';
+  const phrase =
+    mode === 'tout'
+      ? 'Tout effacer : toutes les commandes de la boutique disparaissent. Continuer ?'
+      : `${geste === 'anonymiser' ? 'Anonymiser' : 'Effacer'} les commandes d'avant le ${avant} ` +
+        `(au moins ${concernees} sur les ${state.orders.length} affichées). Continuer ?`;
+  if (!confirm(phrase)) return;
+
+  const bouton = $('doPurge');
+  bouton.disabled = true;
+  bouton.textContent = sauvegarde ? 'Sauvegarde…' : 'Effacement…';
+  try {
+    // `api()` sérialise lui-même : lui passer du texte déjà sérialisé enverrait
+    // une chaîne JSON là où le serveur attend un objet, et il refuserait.
+    const fait = await api('/orders/purge', {
+      method: 'POST',
+      body: { mode, avant, sauvegarde, confirmation: 'EFFACER' },
+    });
+    $('fPurgeConfirm').value = '';
+    await refreshAll();
+    toast(
+      fait.anonymisees
+        ? `${fait.anonymisees} commande(s) anonymisée(s)`
+        : `${fait.effacees} commande(s) effacée(s) · ${fait.restantes} restante(s)`
+    );
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = 'Effacer';
+  }
+}
+
+async function toggleBlock(id, block, button) {
+  button.disabled = true;
+  try {
+    state.settings = await api(`/clients/${id}/${block ? 'block' : 'unblock'}`, { method: 'POST' });
+    renderSettings();
+    renderOrders();
+    toast(block ? `Client #${id} bloqué` : `Client #${id} débloqué`);
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+    button.disabled = false;
+  }
+}
+
+/* ── Catégories ──────────────────────────────────────────── */
+
+/**
+ * Les catégories sont enregistrées d'un bloc (PUT /categories) : l'écran
+ * édite une copie de travail, et rien ne part tant qu'on n'enregistre pas.
+ */
+function renderCategories() {
+  $('categoryRows').replaceChildren(...state.categories.map(categoryRow));
+}
+
+function categoryRow(category = { id: '', label: '', emoji: '•' }) {
+  const row = document.createElement('div');
+  row.className = 'a-catrow';
+  row.dataset.id = category.id;
+  row.innerHTML = `
+    <input class="a-category__emoji" maxlength="16" value="${escapeHtml(category.emoji ?? '•')}" aria-label="Emoji">
+    <input class="a-category__label" maxlength="40" value="${escapeHtml(category.label ?? '')}" placeholder="Nom de la catégorie">
+    <button class="a-variant__del" type="button" aria-label="Supprimer">✕</button>`;
+
+  row.querySelector('button').addEventListener('click', () => {
+    const used = state.products.filter((p) => p.category === category.id).length;
+    if (used) {
+      toast(`${used} produit(s) utilisent cette catégorie.`);
+      return;
+    }
+    row.remove();
+  });
+  return row;
+}
+
+function addCategoryRow() {
+  $('categoryRows').append(categoryRow());
+}
+
+async function saveCategoryList() {
+  const categories = [...$('categoryRows').children]
+    .map((row) => ({
+      // On garde l'identifiant existant : les produits pointent dessus.
+      id: row.dataset.id || undefined,
+      label: row.querySelector('.a-category__label').value.trim(),
+      emoji: row.querySelector('.a-category__emoji').value.trim() || '•',
+    }))
+    .filter((c) => c.label);
+
+  if (!categories.length) {
+    toast('Il faut au moins une catégorie.');
+    return;
+  }
+
+  const button = $('saveCategories');
+  button.disabled = true;
+  try {
+    await api('/categories', { method: 'PUT', body: { categories } });
+    await refreshAll();
+    toast('Catégories enregistrées');
+    haptic('success');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ── Utilitaires ─────────────────────────────────────────── */
+
+/* ── Les deux gestes d'urgence ──────────────────────────── */
+
+/**
+ * Le rideau de fer et la porte, en tête du tableau de bord.
+ *
+ * Deux choses différentes, et c'est pourquoi il y a deux boutons plutôt
+ * qu'un seul à trois positions. Fermer la boutique, c'est dire « on rouvre
+ * à 13h » : elle reste visible, reconnaissable, et le client comprend. Le
+ * rideau, lui, ne laisse rien à voir — la page s'en va ailleurs et l'API se
+ * tait. On ne baisse pas l'un en croyant faire l'autre.
+ */
+function renderCommandes() {
+  const reglages = state.settings;
+  if (!reglages || !$('btnUrgence')) return;
+
+  const baisse = reglages.urgence === true;
+  $('btnUrgence').classList.toggle('a-gros--actif', baisse);
+  $('btnUrgence').setAttribute('aria-pressed', baisse ? 'true' : 'false');
+  $('btnUrgenceTitre').textContent = baisse ? 'Urgence active' : 'Urgence';
+  $('btnUrgenceDit').textContent = baisse
+    ? 'La boutique renvoie sur Google'
+    : 'La boutique est visible';
+
+  const ouverte = reglages.opening?.open !== false;
+  $('btnOuverture').classList.toggle('a-gros--actif', !ouverte);
+  $('btnOuverture').setAttribute('aria-pressed', ouverte ? 'true' : 'false');
+  $('btnOuvertureTitre').textContent = ouverte ? 'Ouverte' : 'Fermée';
+  $('btnOuvertureDit').textContent = ouverte
+    ? 'On prend les commandes'
+    : 'Les commandes sont refusées';
+}
+
+/**
+ * Baisse ou relève le rideau.
+ *
+ * On demande confirmation dans les deux sens, et pas seulement pour le
+ * baisser : relever par erreur rend la boutique visible à l'instant même,
+ * ce qui est exactement ce qu'on cherchait à éviter.
+ */
+async function basculerLUrgence() {
+  const baisse = state.settings?.urgence === true;
+  const question = baisse
+    ? 'Relever le rideau ? La boutique redevient visible immédiatement.'
+    : "Baisser le rideau ?\n\nLa boutique renverra tous les visiteurs sur Google, "
+      + "et l'API refusera tout, jusqu'à ce que tu la relèves ici.\n\n"
+      + 'Cet écran, lui, reste accessible.';
+  if (!confirm(question)) return;
+
+  const bouton = $('btnUrgence');
+  bouton.disabled = true;
+  try {
+    state.settings = await api('/settings', { method: 'PUT', body: { urgence: !baisse } });
+    renderCommandes();
+    renderSettings();
+    toast(baisse ? 'Rideau relevé — la boutique est de nouveau visible.' : 'Rideau baissé.');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+/** Ferme ou rouvre la boutique. Pas de confirmation : c'est un geste du jour. */
+async function basculerLOuverture() {
+  const ouverte = state.settings?.opening?.open !== false;
+  const bouton = $('btnOuverture');
+  bouton.disabled = true;
+  try {
+    state.settings = await api('/settings', { method: 'PUT', body: { opening: { open: !ouverte } } });
+    renderCommandes();
+    renderSettings();
+    toast(ouverte ? 'Boutique fermée.' : 'Boutique ouverte.');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+/* ── La playlist d'ambiance ─────────────────────────────── */
+
+/**
+ * La liste des morceaux, avec leur ordre.
+ *
+ * Réordonner se fait par deux flèches et non par glisser-déposer : sur un
+ * téléphone, un glisser dans une liste qui défile attrape le défilement une
+ * fois sur deux, et le vendeur croit avoir déplacé un morceau qui n'a pas
+ * bougé.
+ */
+function renderMusique() {
+  const bloc = $('musiqueBlock');
+  if (!bloc) return;
+
+  // Le bloc suit l'interrupteur : régler une playlist qui ne joue nulle part
+  // donnerait l'impression qu'elle joue.
+  bloc.hidden = !state.settings?.features?.musique;
+  if (bloc.hidden) return;
+
+  const titres = state.settings?.musique?.titres ?? [];
+  const liste = $('musiqueListe');
+  const max = state.musiqueMax ?? 30;
+
+  $('musiqueCompte').textContent = titres.length
+    ? `${titres.length} morceau${titres.length > 1 ? 'x' : ''} sur ${max}.`
+    : "Aucun morceau : la pastille ne s'affiche pas encore dans la boutique.";
+  $('pickMusique').disabled = titres.length >= max;
+
+  liste.replaceChildren(
+    ...titres.map((morceau, rang) => {
+      const ligne = document.createElement('div');
+      ligne.className = 'a-musique__ligne';
+      ligne.innerHTML = `
+        <span class="a-musique__rang">${rang + 1}</span>
+        <input class="a-musique__titre" value="${escapeHtml(morceau.titre)}" maxlength="80"
+               aria-label="Titre du morceau ${rang + 1}">
+        <button class="a-musique__geste" type="button" data-sens="-1" title="Monter"
+                aria-label="Monter" ${rang === 0 ? 'disabled' : ''}>↑</button>
+        <button class="a-musique__geste" type="button" data-sens="1" title="Descendre"
+                aria-label="Descendre" ${rang === titres.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="a-musique__geste a-musique__geste--oter" type="button" data-oter="1"
+                title="Retirer" aria-label="Retirer">✕</button>`;
+
+      // Le titre s'enregistre quand le champ perd le focus, pas à chaque
+      // frappe : une requête par lettre saturerait la liaison du téléphone.
+      const champ = ligne.querySelector('.a-musique__titre');
+      champ.addEventListener('change', async () => {
+        const titre = champ.value.trim();
+        if (!titre || titre === morceau.titre) { champ.value = morceau.titre; return; }
+        try {
+          const musique = await api(`/musique/${morceau.id}`, { method: 'PATCH', body: { titre } });
+          state.settings.musique = musique;
+          renderMusique();
+        } catch (err) { toast(err.message); champ.value = morceau.titre; }
+      });
+
+      for (const bouton of ligne.querySelectorAll('[data-sens]')) {
+        bouton.addEventListener('click', () => deplacerLeMorceau(rang, Number(bouton.dataset.sens)));
+      }
+      ligne.querySelector('[data-oter]').addEventListener('click', async () => {
+        if (!confirm(`Retirer « ${morceau.titre} » de la playlist ?`)) return;
+        try {
+          state.settings.musique = await api(`/musique/${morceau.id}`, { method: 'DELETE' });
+          renderMusique();
+        } catch (err) { toast(err.message); }
+      });
+      return ligne;
+    })
+  );
+}
+
+/** Monte ou descend un morceau, et enregistre la liste entière. */
+async function deplacerLeMorceau(rang, sens) {
+  const titres = [...(state.settings?.musique?.titres ?? [])];
+  const vise = rang + sens;
+  if (vise < 0 || vise >= titres.length) return;
+  [titres[rang], titres[vise]] = [titres[vise], titres[rang]];
+
+  try {
+    const reglages = await api('/settings', { method: 'PUT', body: { musique: { titres } } });
+    state.settings = reglages;
+    renderMusique();
+  } catch (err) { toast(err.message); }
+}
+
+/** Envoie un morceau depuis le téléphone. */
+async function envoyerUnMorceau(fichier) {
+  const zone = $('musiqueEnvoi');
+  const barre = $('musiqueProgres');
+  const etat = $('musiqueEtat');
+
+  zone.hidden = false;
+  $('pickMusique').disabled = true;
+  etat.textContent = 'Envoi…';
+
+  try {
+    const nom = encodeURIComponent(fichier.name || 'morceau.mp3');
+    const musique = await televerserVers(
+      `/api/admin/musique/upload?nom=${nom}`,
+      fichier,
+      (part) => { barre.style.width = `${Math.round(part * 100)}%`; }
+    );
+    state.settings.musique = musique;
+    renderMusique();
+    toast('Morceau ajouté.');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    zone.hidden = true;
+    barre.style.width = '0%';
+    $('pickMusique').disabled = false;
+  }
+}
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`/api/admin${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Telegram-Init-Data': tg?.initData ?? '',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 204) return null;
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
+  return data;
+}
+
+function fillSelect(select, entries) {
+  select.replaceChildren(
+    ...entries.map(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    })
+  );
+}
+
+/**
+ * Un montant saisi, en centimes.
+ *
+ * `Number('')` vaut zéro : sans ce garde-fou, un champ prix resté vide — ou
+ * vidé par un `input[type=number]` qui refuse la virgule — enregistrait le
+ * produit à 0 €. NaN remonte maintenant jusqu'au message d'erreur.
+ */
+function toCents(value) {
+  const texte = String(value ?? '').trim().replace(',', '.');
+  if (!texte) return NaN;
+  const number = Number(texte);
+  return Number.isFinite(number) ? Math.round(number * 100) : NaN;
+}
+
+function formatPrice(cents) {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: state.currency || 'EUR',
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+let toastTimer;
+function toast(message) {
+  const el = $('toast');
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 2600);
+}
+
+function haptic(type) {
+  const h = tg?.HapticFeedback;
+  if (!h) return;
+  if (type === 'success') h.notificationOccurred?.('success');
+  else h.impactOccurred?.(type);
+}
+
+/** Telegram n'accepte que des couleurs hexadécimales : on convertit les
+ *  jetons « R G B » du thème pour que la barre native suive la palette. */
+function themeHex(token, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(token);
+  const parts = raw.match(/\d+/g);
+  if (!parts || parts.length < 3) return fallback;
+  return `#${parts.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/* ── Avis ────────────────────────────────────────────────── */
+
+/**
+ * Les avis, et ce qu'on en fait.
+ *
+ * L'écran est construit autour d'une conviction : une mauvaise note n'est pas
+ * un problème à effacer, c'est un problème à traiter. Les notes basses sans
+ * réponse sont donc comptées en tête et filtrables d'un bouton — masquer existe,
+ * mais c'est le dernier recours, pas le premier geste.
+ */
+async function chargerLesAvis() {
+  try {
+    const data = await api('/avis');
+    state.avis = data.avis;
+    state.avisResume = data;
+    state.avisCharges = true;
+    renderAvis();
+  } catch (err) {
+    $('avisList').innerHTML = `<p class="a-empty">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderAvis() {
+  const data = state.avisResume;
+  if (!data) return;
+
+  // Une pastille sur l'onglet : une note basse sans réponse est la seule chose
+  // de cet écran qui attende vraiment quelque chose du vendeur.
+  $('avisDot').hidden = !data.sansReponse;
+
+  $('avisStat').innerHTML =
+    carteChiffre('Note moyenne', data.moyenne === null ? '—' : data.moyenne.toFixed(1).replace('.', ','),
+      data.moyenne === null ? '' : etoilesAdmin(data.moyenne)) +
+    carteChiffre('Avis reçus', String(data.total), data.masques ? `${data.masques} masqué${data.masques > 1 ? 's' : ''}` : '') +
+    carteChiffre('À rattraper', String(data.sansReponse), data.sansReponse ? '1 ou 2 étoiles, sans réponse' : 'rien en attente');
+
+  $('avisParProduit').replaceChildren(
+    ...(data.parProduit.length
+      ? data.parProduit.map(ligneProduitNote)
+      : [phrase('Aucun avis pour le moment.')])
+  );
+
+  const filtres = [
+    ['tous', `Tous (${data.total})`],
+    ['basses', `À rattraper (${data.sansReponse})`],
+    ['masques', `Masqués (${data.masques})`],
+  ];
+  $('avisFiltres').replaceChildren(
+    ...filtres.map(([valeur, libelle]) => {
+      const bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.className = 'a-filter';
+      bouton.textContent = libelle;
+      bouton.setAttribute('aria-pressed', String(state.avisFiltre === valeur));
+      bouton.addEventListener('click', () => {
+        state.avisFiltre = valeur;
+        renderAvis();
+        haptic('light');
+      });
+      return bouton;
+    })
+  );
+
+  const liste = state.avis.filter((a) => {
+    if (state.avisFiltre === 'basses') return a.note <= 2 && !a.reponse;
+    if (state.avisFiltre === 'masques') return a.statut === 'masque';
+    return true;
+  });
+
+  $('avisList').replaceChildren(
+    ...(liste.length ? liste.map(carteAvisAdmin) : [phrase('Rien avec ce filtre.')])
+  );
+}
+
+function carteChiffre(label, valeur, detail) {
+  return (
+    '<div class="a-kpi">' +
+    `<span class="a-kpi__label">${escapeHtml(label)}</span>` +
+    `<span class="a-kpi__value">${escapeHtml(valeur)}</span>` +
+    (detail ? `<span class="a-kpi__hint">${escapeHtml(detail)}</span>` : '') +
+    '</div>'
+  );
+}
+
+function phrase(texte) {
+  const p = document.createElement('p');
+  p.className = 'a-empty';
+  p.textContent = texte;
+  return p;
+}
+
+const etoilesAdmin = (note) => '★'.repeat(Math.round(note)) + '☆'.repeat(Math.max(0, 5 - Math.round(note)));
+
+/** Une ligne par produit noté : la moyenne, et ce qui la compose. */
+function ligneProduitNote(produit) {
+  const ligne = document.createElement('div');
+  ligne.className = 'a-noteligne';
+  const maximum = Math.max(...produit.repartition, 1);
+
+  ligne.innerHTML =
+    `<div class="a-noteligne__tete">` +
+    `<span class="a-noteligne__nom">${escapeHtml(produit.nom)}</span>` +
+    `<span class="a-noteligne__note">${etoilesAdmin(produit.moyenne)} ` +
+    `<b>${produit.moyenne.toFixed(1).replace('.', ',')}</b> ` +
+    `<small>${produit.nombre} avis</small></span></div>` +
+    `<div class="a-noteligne__barres">` +
+    [5, 4, 3, 2, 1]
+      .map((note) => {
+        const combien = produit.repartition[note - 1];
+        return (
+          '<span class="a-noteligne__barre" ' +
+          `title="${note} étoile${note > 1 ? 's' : ''} : ${combien}">` +
+          `<span style="height:${Math.round((combien / maximum) * 100)}%"></span></span>`
+        );
+      })
+      .join('') +
+    '</div>';
+  return ligne;
+}
+
+function carteAvisAdmin(avis) {
+  const carte = document.createElement('article');
+  carte.className = `a-avis${avis.statut === 'masque' ? ' a-avis--masque' : ''}`;
+
+  // Le vendeur voit toujours qui a écrit : c'est sa boutique, et un avis
+  // anonyme reste rattaché à une commande qu'il doit pouvoir retrouver.
+  // L'anonymat vaut vis-à-vis des autres clients — on le signale, pour qu'il
+  // sache que ce nom n'est pas celui qui s'affiche en boutique.
+  const qui = avis.user?.username
+    ? `@${avis.user.username}`
+    : avis.user?.firstName ?? `#${avis.user?.id ?? '?'}`;
+
+  carte.innerHTML =
+    '<div class="a-avis__tete">' +
+    `<span class="a-avis__etoiles">${etoilesAdmin(avis.note)}</span>` +
+    `<span class="a-avis__produit">${escapeHtml(avis.produit)}</span>` +
+    `<span class="a-avis__quand">${escapeHtml(ilYA(avis.createdAt))}</span>` +
+    '</div>' +
+    `<p class="a-avis__qui">${escapeHtml(qui)} · ${escapeHtml(avis.reference)}` +
+    `${avis.anonyme ? ' · <b>publié en anonyme</b>' : ''}` +
+    `${avis.modifieLe ? ' · <i>modifié</i>' : ''}` +
+    `${avis.statut === 'masque' ? ' · <b>masqué</b>' : ''}</p>` +
+    (avis.texte ? `<p class="a-avis__texte">« ${escapeHtml(avis.texte)} »</p>` : '<p class="a-avis__texte a-client__gris">Note seule, sans commentaire.</p>') +
+    (avis.reponse
+      ? `<div class="a-avis__reponse"><b>Ta réponse</b><p>${escapeHtml(avis.reponse.texte)}</p></div>`
+      : '') +
+    '<div class="a-avis__actions"></div>' +
+    '<div class="a-compose" hidden>' +
+    '<textarea class="a-compose__texte" rows="2" maxlength="600" placeholder="Ta réponse, publiée sous l\'avis…"></textarea>' +
+    '<div class="a-compose__bar">' +
+    '<button class="a-btn a-btn--ok" type="button" data-publier>Publier la réponse</button>' +
+    '<button class="a-btn" type="button" data-annuler>Annuler</button>' +
+    '<span class="a-compose__etat"></span>' +
+    '</div></div>';
+
+  const actions = carte.querySelector('.a-avis__actions');
+  const compose = carte.querySelector('.a-compose');
+  const texte = carte.querySelector('.a-compose__texte');
+  const etat = carte.querySelector('.a-compose__etat');
+
+  // Répondre d'abord : c'est le geste qui sert la boutique. Une réponse sous
+  // une mauvaise note en dit plus long que trois cinq étoiles.
+  const repondre = document.createElement('button');
+  repondre.className = 'a-btn a-btn--ok';
+  repondre.type = 'button';
+  repondre.textContent = avis.reponse ? '✍️ Modifier la réponse' : '✍️ Répondre';
+  repondre.addEventListener('click', () => {
+    compose.hidden = !compose.hidden;
+    if (!compose.hidden) {
+      texte.value = avis.reponse?.texte ?? '';
+      texte.focus();
+    }
+  });
+  actions.append(repondre);
+
+  const masquer = document.createElement('button');
+  masquer.className = 'a-btn';
+  masquer.type = 'button';
+  masquer.textContent = avis.statut === 'masque' ? '👁 Republier' : '🚫 Masquer';
+  masquer.addEventListener('click', async () => {
+    masquer.disabled = true;
+    try {
+      await api(`/avis/${avis.id}/statut`, {
+        method: 'POST',
+        body: { statut: avis.statut === 'masque' ? 'publie' : 'masque' },
+      });
+      toast(avis.statut === 'masque' ? 'Avis republié' : 'Avis masqué');
+      haptic('success');
+      await chargerLesAvis();
+    } catch (err) {
+      toast(err.message);
+      masquer.disabled = false;
+    }
+  });
+  actions.append(masquer);
+
+  const effacer = document.createElement('button');
+  effacer.className = 'a-btn a-btn--danger';
+  effacer.type = 'button';
+  effacer.textContent = '🗑';
+  effacer.setAttribute('aria-label', 'Supprimer définitivement');
+  effacer.addEventListener('click', async () => {
+    // Masquer se défait, supprimer non : on le demande, une fois.
+    if (!window.confirm('Supprimer cet avis définitivement ? Masquer suffit dans la plupart des cas.')) return;
+    effacer.disabled = true;
+    try {
+      await api(`/avis/${avis.id}`, { method: 'DELETE' });
+      toast('Avis supprimé');
+      haptic('success');
+      await chargerLesAvis();
+    } catch (err) {
+      toast(err.message);
+      effacer.disabled = false;
+    }
+  });
+  actions.append(effacer);
+
+  carte.querySelector('[data-annuler]').addEventListener('click', () => {
+    compose.hidden = true;
+  });
+
+  const publier = carte.querySelector('[data-publier]');
+  publier.addEventListener('click', async () => {
+    publier.disabled = true;
+    etat.className = 'a-compose__etat';
+    etat.textContent = 'Publication…';
+    try {
+      await api(`/avis/${avis.id}/reponse`, { method: 'POST', body: { texte: texte.value } });
+      haptic('success');
+      await chargerLesAvis();
+    } catch (err) {
+      etat.className = 'a-compose__etat a-compose__etat--ko';
+      etat.textContent = err.message;
+      publier.disabled = false;
+    }
+  });
+
+  return carte;
+}
+
+/* ── Présence ────────────────────────────────────────────── */
+
+/**
+ * Qui est dans la boutique, rafraîchi tant que l'écran est ouvert.
+ *
+ * Toutes les quinze secondes : assez pour que le bandeau suive quelqu'un qui
+ * arrive, assez peu pour ne pas marteler un VPS modeste. Rien ne tourne quand
+ * l'écran n'est pas visible — un panel laissé ouvert dans un onglet de fond
+ * n'a aucune raison d'interroger le serveur toute la nuit.
+ */
+function suivreLaPresence() {
+  const relever = async () => {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const data = await api('/presence');
+      state.presence = data;
+      state.presents = new Set(data.actifs.map((a) => String(a.id)));
+      renderPresence();
+    } catch {
+      /* la présence n'est pas la boutique : son absence ne bloque rien */
+    }
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') relever();
+  });
+  relever();
+  setInterval(relever, 15000);
+}
+
+/**
+ * Le bandeau du haut, et les pastilles sur les fiches.
+ *
+ * Le libellé dit « actif », jamais « en ligne » : Telegram ne donne pas le
+ * statut en ligne aux bots. Écrire « en ligne » ferait chercher une panne le
+ * jour où un client « hors ligne » passe commande.
+ */
+function renderPresence() {
+  const bandeau = $('presence');
+  if (!bandeau) return;
+
+  const data = state.presence;
+  const visites = data?.visites ?? [];
+  if (!visites.length) {
+    bandeau.hidden = true;
+    return;
+  }
+
+  const minutes = Math.round((data.fenetreSecondes ?? 180) / 60);
+  const memoire = Math.round((data.memoireSecondes ?? 1800) / 60);
+
+  // La traîne est déjà triée du plus frais au plus ancien : ceux qui sont
+  // encore là viennent donc naturellement en tête, sans tri supplémentaire.
+  const gens = visites
+    .slice(0, 12)
+    .map((v) => {
+      const qui = v.username ? `@${v.username}` : v.prenom ?? `#${v.id}`;
+      const quand = v.depuis < 60 ? "à l'instant" : `${Math.round(v.depuis / 60)} min`;
+      return (
+        `<span class="a-present${v.actif ? ' a-present--ici' : ''}" title="${escapeHtml(quand)}">` +
+        `${v.ou === 'conversation' ? '💬' : '🛒'} ${escapeHtml(qui)}` +
+        `<small>${escapeHtml(quand)}</small>` +
+        (v.passages > 1 ? `<b>×${v.passages}</b>` : '') +
+        '</span>'
+      );
+    })
+    .join('');
+
+  bandeau.innerHTML =
+    '<div class="a-presence__tete">' +
+    (data.total ? '<span class="a-presence__pouls" aria-hidden="true"></span>' : '') +
+    `<b>${data.visitesTotal} visite${data.visitesTotal > 1 ? 's' : ''}</b>` +
+    `<span class="a-presence__sur">sur ${memoire} min</span>` +
+    `<span class="a-presence__quoi">${data.total} encore là <small>&lt; ${minutes} min</small></span>` +
+    '</div>' +
+    `<div class="a-presence__gens">${gens}` +
+    (visites.length > 12 ? `<span class="a-present">+${visites.length - 12}</span>` : '') +
+    '</div>';
+  bandeau.hidden = false;
+
+  // Les fiches déjà à l'écran s'allument sans être reconstruites : refaire la
+  // liste toutes les quinze secondes replierait les cartes qu'on vient d'ouvrir.
+  for (const carte of document.querySelectorAll('.a-client[data-id]')) {
+    carte.classList.toggle('est-actif', state.presents.has(carte.dataset.id));
+  }
+}
