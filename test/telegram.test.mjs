@@ -141,10 +141,10 @@ for (const cmd of ['/start', '/boutique']) {
   // Reprise et non recopiée : la phrase du cadre d'accueil de la Mini App,
   // ses balises devenues des astérisques, doit se retrouver ici mot pour mot.
   const { TEXTES } = await import('../webapp/js/langues.js');
-  const attendu = String(TEXTES.fr['accueil.texte'])
-    .replace(/<\/?strong>/g, '')
-    .split('{boutique}')[1]
-    .trim();
+  // Le nom de la boutique peut ouvrir la phrase ou ne pas y figurer : on ne
+  // compare que ce qui le suit, ou la phrase entière.
+  const phrase = String(TEXTES.fr['accueil.texte']).replace(/<\/?strong>/g, '');
+  const attendu = (phrase.includes('{boutique}') ? phrase.split('{boutique}')[1] : phrase).trim();
   const lu = texte.replace(/\\(.)/g, '$1').replace(/\*/g, '');
   check("C'est la phrase du cadre d'accueil, pas une copie",
     lu.includes(attendu), attendu.slice(0, 50));

@@ -46,8 +46,8 @@ export const TEXTES = {
       '{boutique} est là pour vous faire découvrir <strong>de nouvelles variétés</strong> ainsi ' +
       'que des nouvelles gammes, renouvelées toute l\'année. <strong>Qualité garantie</strong> sur ' +
       'chaque produit du catalogue.',
-    'accueil.horaires': '7/7 · 13H-00H',
-    'accueil.service': 'Meet-up & Livraison',
+    'accueil.horaires': "12H – 22H",
+    'accueil.service': "Meet-up discret",
     'accueil.botApp':
       'Tout se passe dans l\'app : catalogue en images, fiches produits, et ta commande déjà ' +
       'écrite.',
@@ -202,8 +202,8 @@ export const TEXTES = {
     /* ── Le contact, en détail ── */
     'contact.onPrend': 'On prend les commandes.',
     'contact.onRouvre': 'On rouvre bientôt.',
-    'contact.retrait': 'Retrait sur place',
-    'contact.retraitDetail': 'Rendez-vous convenu dans la conversation.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Endroit discret, pas d'attente : ta commande est prête à ton nom Telegram.",
     'contact.livraison': 'Livraison',
     'contact.livraisonDetail': 'Adresse demandée au moment de la commande.',
     'contact.especes': 'Paiement en espèces',
@@ -365,8 +365,8 @@ export const TEXTES = {
     'panier.ouvrir': "Ouvrir le panier",
     'profil.contact': "Une question ? Contact",
     'commande.mode': "Comment tu récupères",
-    'commande.retrait': "🏠 Retrait",
-    'commande.surPlace': "sur place",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "endroit discret",
     'commande.livraison': "🛵 Livraison",
     'commande.offerte': "offerte",
     'commande.adresse': "Adresse de livraison",
@@ -417,7 +417,7 @@ export const TEXTES = {
     'done.mesCommandes': "Mes commandes",
     'done.continuer': "Continuer mes achats",
     'done.especes': "💶 Paiement en espèces, à la remise.",
-    'done.retrait': "🏠 Retrait sur place",
+    'done.retrait': "🤝 Meet-up, endroit discret",
     'done.livraison': "🛵 Livraison",
     'o68.badge': "Sélection par farms",
     'o68.devise': "La sélection · Les farms · Les références",
@@ -432,6 +432,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "Les farms arrivent bientôt.",
     'onglet.farms': "Farms",
     'onglet.infos': "Infos",
+    'o68.ecrire': "Écrire à @original68off",
+    'o68.contact': "Contact",
+    'o68.lieuxDetail': "10 min de Mulhouse · 20/25 min de Colmar · 25/30 min de Belfort",
+    'o68.lieux': "Lieux",
+    'o68.horairesDetail': "12h – 22h",
+    'o68.horaires': "Horaires",
+    'contact.texte': "Une question sur un produit, une commande, un meet-up : écris-nous sur Telegram, on répond vite.",
+    'accueil.texte': "<strong>Sélection par farms</strong> 🧤🌎🏆 — l'élite du game 🥇🎮. Meet-up dans un endroit discret, <strong>pas d'attente</strong> : ta commande est prête à ton nom Telegram.",
 
     'secours.titre': 'Porte de secours',
     'secours.texte':
@@ -458,8 +466,8 @@ export const TEXTES = {
     'accueil.texte':
       '{boutique} is here to show you <strong>new strains</strong> and new ranges, refreshed all ' +
       'year round. <strong>Quality guaranteed</strong> on every product in the catalogue.',
-    'accueil.horaires': '7/7 · 1PM-12AM',
-    'accueil.service': 'Meet-up & Delivery',
+    'accueil.horaires': "12PM – 10PM",
+    'accueil.service': "Discreet meet-up",
     'accueil.botApp':
       'Everything happens in the app: catalogue in pictures, product sheets, and your order ' +
       'already written.',
@@ -599,8 +607,8 @@ export const TEXTES = {
     /* ── Le contact, en détail ── */
     'contact.onPrend': "We're taking orders.",
     'contact.onRouvre': "We'll reopen soon.",
-    'contact.retrait': 'Meetup',
-    'contact.retraitDetail': 'Time and place agreed in the chat.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Discreet spot, no waiting: your order is ready under your Telegram name.",
     'contact.livraison': 'Delivery',
     'contact.livraisonDetail': 'Address asked for when you order.',
     'contact.especes': 'Cash payment',
@@ -759,8 +767,8 @@ export const TEXTES = {
     'panier.ouvrir': "Open the cart",
     'profil.contact': "A question? Contact",
     'commande.mode': "How you get it",
-    'commande.retrait': "🏠 Pickup",
-    'commande.surPlace': "on site",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "discreet spot",
     'commande.livraison': "🛵 Delivery",
     'commande.offerte': "free",
     'commande.adresse': "Delivery address",
@@ -811,7 +819,7 @@ export const TEXTES = {
     'done.mesCommandes': "My orders",
     'done.continuer': "Keep shopping",
     'done.especes': "💶 Cash payment, on handover.",
-    'done.retrait': "🏠 Pickup on site",
+    'done.retrait': "🤝 Meet-up, discreet spot",
     'done.livraison': "🛵 Delivery",
     'o68.badge': "Selection by farms",
     'o68.devise': "The selection · The farms · The references",
@@ -826,6 +834,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "Farms are coming soon.",
     'onglet.farms': "Farms",
     'onglet.infos': "Info",
+    'o68.ecrire': "Message @original68off",
+    'o68.contact': "Contact",
+    'o68.lieuxDetail': "10 min from Mulhouse · 20/25 min from Colmar · 25/30 min from Belfort",
+    'o68.lieux': "Locations",
+    'o68.horairesDetail': "12pm – 10pm",
+    'o68.horaires': "Hours",
+    'contact.texte': "A question about a product, an order or a meet-up: message us on Telegram, we answer fast.",
+    'accueil.texte': "<strong>Selection by farms</strong> 🧤🌎🏆 — the elite of the game 🥇🎮. Meet-up in a discreet spot, <strong>no waiting</strong>: your order is ready under your Telegram name.",
 
     'secours.titre': 'Backup door',
     'secours.texte':
@@ -852,8 +868,8 @@ export const TEXTES = {
     'accueil.texte':
       '{boutique} está aquí para descubrirte <strong>nuevas variedades</strong> y nuevas gamas, ' +
       'renovadas todo el año. <strong>Calidad garantizada</strong> en cada producto del catálogo.',
-    'accueil.horaires': '7/7 · 13:00-00:00',
-    'accueil.service': 'Meet-up y Entrega',
+    'accueil.horaires': "12H – 22H",
+    'accueil.service': "Meet-up discreto",
     'accueil.botApp':
       'Todo pasa en la app: catálogo en imágenes, fichas de producto, y tu pedido ya redactado.',
     'accueil.langue': 'Elige tu idioma',
@@ -992,8 +1008,8 @@ export const TEXTES = {
     /* ── Le contact, en détail ── */
     'contact.onPrend': 'Estamos tomando pedidos.',
     'contact.onRouvre': 'Volvemos a abrir pronto.',
-    'contact.retrait': 'Recogida en mano',
-    'contact.retraitDetail': 'Cita acordada en la conversación.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Lugar discreto, sin esperas: tu pedido está listo a tu nombre de Telegram.",
     'contact.livraison': 'Entrega',
     'contact.livraisonDetail': 'La dirección se pide al hacer el pedido.',
     'contact.especes': 'Pago en efectivo',
@@ -1152,8 +1168,8 @@ export const TEXTES = {
     'panier.ouvrir': "Abrir el carrito",
     'profil.contact': "¿Una pregunta? Contacto",
     'commande.mode': "Cómo lo recoges",
-    'commande.retrait': "🏠 Recogida",
-    'commande.surPlace': "en tienda",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "lugar discreto",
     'commande.livraison': "🛵 Entrega",
     'commande.offerte': "gratis",
     'commande.adresse': "Dirección de entrega",
@@ -1204,7 +1220,7 @@ export const TEXTES = {
     'done.mesCommandes': "Mis pedidos",
     'done.continuer': "Seguir comprando",
     'done.especes': "💶 Pago en efectivo, a la entrega.",
-    'done.retrait': "🏠 Recogida en tienda",
+    'done.retrait': "🤝 Meet-up, lugar discreto",
     'done.livraison': "🛵 Entrega",
     'o68.badge': "Selección por farms",
     'o68.devise': "La selección · Las farms · Las referencias",
@@ -1219,6 +1235,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "Las farms llegan pronto.",
     'onglet.farms': "Farms",
     'onglet.infos': "Info",
+    'o68.ecrire': "Escribir a @original68off",
+    'o68.contact': "Contacto",
+    'o68.lieuxDetail': "A 10 min de Mulhouse · 20/25 min de Colmar · 25/30 min de Belfort",
+    'o68.lieux': "Zonas",
+    'o68.horairesDetail': "12h – 22h",
+    'o68.horaires': "Horario",
+    'contact.texte': "Una pregunta sobre un producto, un pedido o un meet-up: escríbenos por Telegram, respondemos rápido.",
+    'accueil.texte': "<strong>Selección por farms</strong> 🧤🌎🏆 — la élite del juego 🥇🎮. Meet-up en un lugar discreto, <strong>sin esperas</strong>: tu pedido está listo a tu nombre de Telegram.",
 
     'secours.titre': 'Puerta de emergencia',
     'secours.texte':
@@ -1245,8 +1269,8 @@ export const TEXTES = {
     'accueil.texte':
       '{boutique} è qui per farti scoprire <strong>nuove varietà</strong> e nuove gamme, ' +
       'rinnovate tutto l\'anno. <strong>Qualità garantita</strong> su ogni prodotto del catalogo.',
-    'accueil.horaires': '7/7 · 13-24',
-    'accueil.service': 'Incontro e consegna',
+    'accueil.horaires': "12 – 22",
+    'accueil.service': "Meet-up discreto",
     'accueil.botApp':
       'Tutto avviene nell\'app: catalogo in immagini, schede prodotto, e il tuo ordine già ' +
       'scritto.',
@@ -1381,8 +1405,8 @@ export const TEXTES = {
 
     'contact.onPrend': 'Prendiamo ordini.',
     'contact.onRouvre': 'Riapriamo presto.',
-    'contact.retrait': 'Ritiro di persona',
-    'contact.retraitDetail': 'Appuntamento concordato in chat.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Posto discreto, niente attese: il tuo ordine è pronto al tuo nome Telegram.",
     'contact.livraison': 'Consegna',
     'contact.livraisonDetail': 'Indirizzo richiesto al momento dell\'ordine.',
     'contact.especes': 'Pagamento in contanti',
@@ -1524,8 +1548,8 @@ export const TEXTES = {
     'panier.ouvrir': "Apri il carrello",
     'profil.contact': "Una domanda? Contatto",
     'commande.mode': "Come lo ritiri",
-    'commande.retrait': "🏠 Ritiro",
-    'commande.surPlace': "in sede",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "posto discreto",
     'commande.livraison': "🛵 Consegna",
     'commande.offerte': "gratis",
     'commande.adresse': "Indirizzo di consegna",
@@ -1576,7 +1600,7 @@ export const TEXTES = {
     'done.mesCommandes': "I miei ordini",
     'done.continuer': "Continua gli acquisti",
     'done.especes': "💶 Pagamento in contanti, alla consegna.",
-    'done.retrait': "🏠 Ritiro in sede",
+    'done.retrait': "🤝 Meet-up, posto discreto",
     'done.livraison': "🛵 Consegna",
     'o68.badge': "Selezione per farm",
     'o68.devise': "La selezione · Le farm · Le referenze",
@@ -1591,6 +1615,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "Le farm arrivano presto.",
     'onglet.farms': "Farm",
     'onglet.infos': "Info",
+    'o68.ecrire': "Scrivi a @original68off",
+    'o68.contact': "Contatto",
+    'o68.lieuxDetail': "10 min da Mulhouse · 20/25 min da Colmar · 25/30 min da Belfort",
+    'o68.lieux': "Zone",
+    'o68.horairesDetail': "12 – 22",
+    'o68.horaires': "Orari",
+    'contact.texte': "Una domanda su un prodotto, un ordine o un meet-up: scrivici su Telegram, rispondiamo in fretta.",
+    'accueil.texte': "<strong>Selezione per farm</strong> 🧤🌎🏆 — l'élite del game 🥇🎮. Meet-up in un posto discreto, <strong>niente attese</strong>: il tuo ordine è pronto al tuo nome Telegram.",
 
     'secours.titre': 'Porta di riserva',
     'secours.texte':
@@ -1618,8 +1650,8 @@ export const TEXTES = {
       '{boutique} laat je <strong>nieuwe soorten</strong> en nieuwe reeksen ontdekken, het hele ' +
       'jaar door vernieuwd. <strong>Gegarandeerde kwaliteit</strong> op elk product in de ' +
       'catalogus.',
-    'accueil.horaires': '7/7 · 13-24 u',
-    'accueil.service': 'Afspraak & levering',
+    'accueil.horaires': "12 – 22 UUR",
+    'accueil.service': "Discrete meet-up",
     'accueil.botApp':
       'Alles gebeurt in de app: catalogus in beeld, productpagina\'s, en je bestelling al ' +
       'opgesteld.',
@@ -1756,8 +1788,8 @@ export const TEXTES = {
 
     'contact.onPrend': 'We nemen bestellingen aan.',
     'contact.onRouvre': 'We openen binnenkort weer.',
-    'contact.retrait': 'Ophalen ter plaatse',
-    'contact.retraitDetail': 'Afspraak wordt in het gesprek gemaakt.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Discrete plek, geen wachttijd: je bestelling ligt klaar op je Telegram-naam.",
     'contact.livraison': 'Levering',
     'contact.livraisonDetail': 'Adres wordt bij de bestelling gevraagd.',
     'contact.especes': 'Contante betaling',
@@ -1902,8 +1934,8 @@ export const TEXTES = {
     'panier.ouvrir': "Winkelmand openen",
     'profil.contact': "Een vraag? Contact",
     'commande.mode': "Hoe je het ophaalt",
-    'commande.retrait': "🏠 Afhalen",
-    'commande.surPlace': "ter plaatse",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "discrete plek",
     'commande.livraison': "🛵 Bezorgen",
     'commande.offerte': "gratis",
     'commande.adresse': "Bezorgadres",
@@ -1954,7 +1986,7 @@ export const TEXTES = {
     'done.mesCommandes': "Mijn bestellingen",
     'done.continuer': "Verder winkelen",
     'done.especes': "💶 Contant betalen, bij overhandiging.",
-    'done.retrait': "🏠 Afhalen ter plaatse",
+    'done.retrait': "🤝 Meet-up, discrete plek",
     'done.livraison': "🛵 Bezorgen",
     'o68.badge': "Selectie per farm",
     'o68.devise': "De selectie · De farms · De referenties",
@@ -1969,6 +2001,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "De farms komen eraan.",
     'onglet.farms': "Farms",
     'onglet.infos': "Info",
+    'o68.ecrire': "Stuur een bericht naar @original68off",
+    'o68.contact': "Contact",
+    'o68.lieuxDetail': "10 min van Mulhouse · 20/25 min van Colmar · 25/30 min van Belfort",
+    'o68.lieux': "Locaties",
+    'o68.horairesDetail': "12 – 22 uur",
+    'o68.horaires': "Openingstijden",
+    'contact.texte': "Een vraag over een product, een bestelling of een meet-up: stuur ons een bericht op Telegram, we antwoorden snel.",
+    'accueil.texte': "<strong>Selectie per farm</strong> 🧤🌎🏆 — de elite van de game 🥇🎮. Meet-up op een discrete plek, <strong>geen wachttijd</strong>: je bestelling ligt klaar op je Telegram-naam.",
 
     'secours.titre': 'Reservedeur',
     'secours.texte':
@@ -1996,8 +2036,8 @@ export const TEXTES = {
       '{boutique} está aqui para te dar a conhecer <strong>novas variedades</strong> e novas ' +
       'gamas, renovadas todo o ano. <strong>Qualidade garantida</strong> em cada produto do ' +
       'catálogo.',
-    'accueil.horaires': '7/7 · 13H-00H',
-    'accueil.service': 'Encontro e entrega',
+    'accueil.horaires': "12H – 22H",
+    'accueil.service': "Meet-up discreto",
     'accueil.botApp':
       'Tudo acontece na app: catálogo em imagens, fichas de produto, e a tua encomenda já ' +
       'escrita.',
@@ -2131,8 +2171,8 @@ export const TEXTES = {
 
     'contact.onPrend': 'Estamos a aceitar encomendas.',
     'contact.onRouvre': 'Reabrimos em breve.',
-    'contact.retrait': 'Levantamento em mão',
-    'contact.retraitDetail': 'Encontro combinado na conversa.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Sítio discreto, sem espera: a tua encomenda fica pronta no teu nome do Telegram.",
     'contact.livraison': 'Entrega',
     'contact.livraisonDetail': 'Morada pedida no momento da encomenda.',
     'contact.especes': 'Pagamento em dinheiro',
@@ -2275,8 +2315,8 @@ export const TEXTES = {
     'panier.ouvrir': "Abrir o carrinho",
     'profil.contact': "Uma pergunta? Contacto",
     'commande.mode': "Como recebes",
-    'commande.retrait': "🏠 Levantamento",
-    'commande.surPlace': "no local",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "sítio discreto",
     'commande.livraison': "🛵 Entrega",
     'commande.offerte': "grátis",
     'commande.adresse': "Morada de entrega",
@@ -2327,7 +2367,7 @@ export const TEXTES = {
     'done.mesCommandes': "As minhas encomendas",
     'done.continuer': "Continuar as compras",
     'done.especes': "💶 Pagamento em dinheiro, na entrega.",
-    'done.retrait': "🏠 Levantamento no local",
+    'done.retrait': "🤝 Meet-up, sítio discreto",
     'done.livraison': "🛵 Entrega",
     'o68.badge': "Seleção por farms",
     'o68.devise': "A seleção · As farms · As referências",
@@ -2342,6 +2382,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "As farms chegam em breve.",
     'onglet.farms': "Farms",
     'onglet.infos': "Info",
+    'o68.ecrire': "Escrever a @original68off",
+    'o68.contact': "Contacto",
+    'o68.lieuxDetail': "A 10 min de Mulhouse · 20/25 min de Colmar · 25/30 min de Belfort",
+    'o68.lieux': "Zonas",
+    'o68.horairesDetail': "12h – 22h",
+    'o68.horaires': "Horário",
+    'contact.texte': "Uma pergunta sobre um produto, uma encomenda ou um meet-up: escreve-nos no Telegram, respondemos depressa.",
+    'accueil.texte': "<strong>Seleção por farms</strong> 🧤🌎🏆 — a elite do game 🥇🎮. Meet-up num sítio discreto, <strong>sem espera</strong>: a tua encomenda fica pronta no teu nome do Telegram.",
 
     'secours.titre': 'Porta de emergência',
     'secours.texte':
@@ -2368,8 +2416,8 @@ export const TEXTES = {
     'accueil.texte':
       '{boutique} zeigt dir <strong>neue Sorten</strong> und neue Reihen, das ganze Jahr über ' +
       'erneuert. <strong>Garantierte Qualität</strong> bei jedem Produkt im Katalog.',
-    'accueil.horaires': '7/7 · 13–24 Uhr',
-    'accueil.service': 'Treffen & Lieferung',
+    'accueil.horaires': "12 – 22 UHR",
+    'accueil.service': "Diskretes Meet-up",
     'accueil.botApp':
       'Alles läuft in der App: Katalog in Bildern, Produktseiten, und deine Bestellung schon ' +
       'fertig geschrieben.',
@@ -2505,8 +2553,8 @@ export const TEXTES = {
 
     'contact.onPrend': 'Wir nehmen Bestellungen an.',
     'contact.onRouvre': 'Wir öffnen bald wieder.',
-    'contact.retrait': 'Abholung vor Ort',
-    'contact.retraitDetail': 'Treffpunkt wird im Chat vereinbart.',
+    'contact.retrait': "Meet-up",
+    'contact.retraitDetail': "Diskreter Ort, keine Wartezeit: deine Bestellung liegt unter deinem Telegram-Namen bereit.",
     'contact.livraison': 'Lieferung',
     'contact.livraisonDetail': 'Adresse wird bei der Bestellung erfragt.',
     'contact.especes': 'Barzahlung',
@@ -2649,8 +2697,8 @@ export const TEXTES = {
     'panier.ouvrir': "Warenkorb öffnen",
     'profil.contact': "Eine Frage? Kontakt",
     'commande.mode': "Wie du es bekommst",
-    'commande.retrait': "🏠 Abholung",
-    'commande.surPlace': "vor Ort",
+    'commande.retrait': "🤝 Meet-up",
+    'commande.surPlace': "diskreter Ort",
     'commande.livraison': "🛵 Lieferung",
     'commande.offerte': "gratis",
     'commande.adresse': "Lieferadresse",
@@ -2701,7 +2749,7 @@ export const TEXTES = {
     'done.mesCommandes': "Meine Bestellungen",
     'done.continuer': "Weiter einkaufen",
     'done.especes': "💶 Barzahlung bei Übergabe.",
-    'done.retrait': "🏠 Abholung vor Ort",
+    'done.retrait': "🤝 Meet-up, diskreter Ort",
     'done.livraison': "🛵 Lieferung",
     'o68.badge': "Auswahl nach Farms",
     'o68.devise': "Die Auswahl · Die Farms · Die Referenzen",
@@ -2716,6 +2764,14 @@ export const TEXTES = {
     'o68.aucuneFarm': "Die Farms kommen bald.",
     'onglet.farms': "Farms",
     'onglet.infos': "Infos",
+    'o68.ecrire': "@original68off schreiben",
+    'o68.contact': "Kontakt",
+    'o68.lieuxDetail': "10 Min. von Mulhouse · 20/25 Min. von Colmar · 25/30 Min. von Belfort",
+    'o68.lieux': "Orte",
+    'o68.horairesDetail': "12 – 22 Uhr",
+    'o68.horaires': "Öffnungszeiten",
+    'contact.texte': "Eine Frage zu einem Produkt, einer Bestellung oder einem Meet-up: schreib uns auf Telegram, wir antworten schnell.",
+    'accueil.texte': "<strong>Auswahl nach Farms</strong> 🧤🌎🏆 — die Elite im Game 🥇🎮. Meet-up an einem diskreten Ort, <strong>keine Wartezeit</strong>: deine Bestellung liegt unter deinem Telegram-Namen bereit.",
 
     'secours.titre': 'Ersatzzugang',
     'secours.texte':
@@ -2742,8 +2798,8 @@ export const TEXTES = {
     'accueil.texte':
       '{boutique} يعرّفك على <strong>أصناف جديدة</strong> وتشكيلات جديدة، تتجدّد طوال السنة. ' +
       '<strong>جودة مضمونة</strong> في كل منتج من الكتالوج.',
-    'accueil.horaires': '7/7 · 13:00-00:00',
-    'accueil.service': 'لقاء وتوصيل',
+    'accueil.horaires': "12 – 22",
+    'accueil.service': "لقاء هادئ",
     'accueil.botApp': 'كل شيء يجري في التطبيق: كتالوج بالصور، بطاقات المنتجات، وطلبك مكتوب سلفاً.',
     'accueil.langue': 'اختر لغتك',
     'accueil.entrer': 'ادخل المتجر',
@@ -2831,7 +2887,7 @@ export const TEXTES = {
     'produit.aimerAussi': 'سيعجبك أيضاً',
 
     'contact.titre': 'عندك سؤال؟',
-    'contact.texte': 'شكّ في منتج، طلب تأخّر، طلب خاص: اكتب لنا على سناب شات، نردّ عليك هناك.',
+    'contact.texte': "سؤال عن منتج أو طلب أو لقاء: راسلنا على تيليغرام، نرد بسرعة.",
 
     'profil.titre': 'حسابي',
     'profil.commandes': 'الطلبات',
@@ -2868,8 +2924,8 @@ export const TEXTES = {
 
     'contact.onPrend': 'نستقبل الطلبات.',
     'contact.onRouvre': 'سنفتح قريباً.',
-    'contact.retrait': 'الاستلام باليد',
-    'contact.retraitDetail': 'يُتّفق على الموعد في المحادثة.',
+    'contact.retrait': "لقاء",
+    'contact.retraitDetail': "مكان هادئ، بدون انتظار: طلبك جاهز باسمك في تيليغرام.",
     'contact.livraison': 'التوصيل',
     'contact.livraisonDetail': 'يُطلب العنوان عند الطلب.',
     'contact.especes': 'الدفع نقداً',
@@ -3010,8 +3066,8 @@ export const TEXTES = {
     'panier.ouvrir': "افتح السلة",
     'profil.contact': "سؤال؟ تواصل معنا",
     'commande.mode': "طريقة الاستلام",
-    'commande.retrait': "🏠 استلام",
-    'commande.surPlace': "في المكان",
+    'commande.retrait': "🤝 لقاء",
+    'commande.surPlace': "مكان هادئ",
     'commande.livraison': "🛵 توصيل",
     'commande.offerte': "مجاناً",
     'commande.adresse': "عنوان التوصيل",
@@ -3062,7 +3118,7 @@ export const TEXTES = {
     'done.mesCommandes': "طلباتي",
     'done.continuer': "متابعة التسوق",
     'done.especes': "💶 الدفع نقداً عند الاستلام.",
-    'done.retrait': "🏠 استلام في المكان",
+    'done.retrait': "🤝 لقاء في مكان هادئ",
     'done.livraison': "🛵 توصيل",
     'o68.badge': "اختيار حسب المزارع",
     'o68.devise': "التشكيلة · المزارع · المراجع",
@@ -3077,6 +3133,13 @@ export const TEXTES = {
     'o68.aucuneFarm': "المزارع قادمة قريباً.",
     'onglet.farms': "المزارع",
     'onglet.infos': "معلومات",
+    'o68.ecrire': "راسل ‎@original68off",
+    'o68.contact': "تواصل",
+    'o68.lieuxDetail': "10 دقائق من Mulhouse · 20/25 دقيقة من Colmar · 25/30 دقيقة من Belfort",
+    'o68.lieux': "الأماكن",
+    'o68.horairesDetail': "12 – 22",
+    'o68.horaires': "الأوقات",
+    'accueil.texte': "<strong>اختيار حسب المزارع</strong> 🧤🌎🏆 — نخبة اللعبة 🥇🎮. لقاء في مكان هادئ، <strong>بدون انتظار</strong>: طلبك جاهز باسمك في تيليغرام.",
 
     'secours.titre': 'باب الطوارئ',
     'secours.texte':

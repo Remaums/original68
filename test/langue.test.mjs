@@ -36,6 +36,18 @@ const { saveSettings } = await import('../server/settings.js');
 const { langueDe, choisirLaLangue, oublierLaLangue, estConnue } = await import('../server/langue.js');
 const { LANGUES, TEXTES } = await import('../webapp/js/langues.js');
 
+/**
+ * Un morceau du message d'accueil d'une langue, tiré du dictionnaire : le
+ * test reconnaît la langue sans dépendre du texte que la boutique a choisi.
+ * On prend les mots qui suivent la première balise, sans la mise en forme.
+ */
+const accueilEn = (code) => {
+  const brut = String(TEXTES[code]['accueil.texte']).replace(/\{boutique\}/g, '');
+  const net = brut.replace(/<\/?strong>/g, '').replace(/\s+/g, ' ').trim();
+  return net.slice(0, 18);
+};
+const parle = (code, texte) => String(texte ?? '').replace(/\\(.)/g, '$1').replace(/\*/g, '').includes(accueilEn(code));
+
 let failures = 0;
 const check = (label, ok, detail = '') => {
   console.log(`${ok ? 'OK   ' : 'ÉCHEC'}  ${label}${detail ? `  (${detail})` : ''}`);
@@ -99,17 +111,17 @@ try {
   console.log('\n── Ce que dit le téléphone ─────────────────────────');
 
   let m = await start('fr');
-  check("L'accueil part en français", /est là pour/.test(m?.payload?.text ?? ''),
+  check("L'accueil part en français", parle('fr', m?.payload?.text),
     (m?.payload?.text ?? '').slice(0, 40));
 
   m = await start('de-DE');
-  check('Un téléphone allemand reçoit l allemand', /zeigt dir/.test(m?.payload?.text ?? ''),
+  check('Un téléphone allemand reçoit l allemand', parle('de', m?.payload?.text),
     (m?.payload?.text ?? '').slice(0, 40));
   check('Et le bouton de langue est dans sa langue',
     touches(m).some((t) => /Sprache/.test(t)), touches(m).join(' | '));
 
   m = await start('zz');
-  check('Une langue inconnue retombe sur le français', /est là pour/.test(m?.payload?.text ?? ''),
+  check('Une langue inconnue retombe sur le français', parle('fr', m?.payload?.text),
     (m?.payload?.text ?? '').slice(0, 40));
 
   console.log('\n── Le choix ────────────────────────────────────────');
@@ -130,7 +142,7 @@ try {
   const edite = e.find((x) => x.method === 'editMessageText');
   check('Le message se réécrit à sa place, sans en ajouter un',
     Boolean(edite) && !e.some((x) => x.method === 'sendMessage'), e.map((x) => x.method).join(','));
-  check('Et il est en néerlandais', /laat je/.test(edite?.payload?.text ?? ''),
+  check('Et il est en néerlandais', parle('nl', edite?.payload?.text),
     (edite?.payload?.text ?? '').slice(0, 40));
   check('Le clavier redevient celui de l accueil',
     touches(edite).some((t) => /Taal/.test(t)), touches(edite).join(' | '));
@@ -142,7 +154,7 @@ try {
   // le touche est celui dont le téléphone n'est pas dans la bonne langue.
   m = await start('fr');
   check('Et il l emporte sur le téléphone au /start suivant',
-    /laat je/.test(m?.payload?.text ?? ''), (m?.payload?.text ?? '').slice(0, 40));
+    parle('nl', m?.payload?.text), (m?.payload?.text ?? '').slice(0, 40));
 
   console.log('\n── Ce qu on refuse ─────────────────────────────────');
 

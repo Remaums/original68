@@ -713,3 +713,6 @@ body { background-image: none; background-color: var(--night); }
   color: #fff; filter: drop-shadow(0 0 6px rgb(var(--neon-rgb) / .8));
 }
 .tabbar__item[aria-selected='true'] .tabbar__icone .i-fond { fill: url(#iconeDegrade); }
+
+/* Le bouton « Écrire à @original68off » de la page Contact. */
+.contact__ecrire { margin: 4px 0 16px; text-decoration: none; text-transform: none; }

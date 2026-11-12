@@ -1016,6 +1016,12 @@ function bindStaticHandlers() {
   });
   $('profilContact').addEventListener('click', () => montrerLOnglet('contact'));
   $('farmRetour').addEventListener('click', () => { renderLesFarms(); haptic('light'); });
+  // Dans Telegram, le lien s'ouvre dans la conversation, sans quitter l'appli.
+  $('contactEcrire').addEventListener('click', (ev) => {
+    if (!tg?.openTelegramLink) return;
+    ev.preventDefault();
+    tg.openTelegramLink('https://t.me/original68off');
+  });
   $('sonBtn').addEventListener('click', basculerLeJuke);
   $('notifyMe').addEventListener('click', joinWaitlist);
 
@@ -1455,7 +1461,9 @@ function renderContact() {
     // Le message de fermeture est écrit par le vendeur : on le rend tel quel,
     // comme les noms de produits. Seul le texte de repli est traduit.
     ouvert ? t('contact.onPrend') : (state.opening?.message ?? t('contact.onRouvre'))]);
+  lignes.push(['🚦', t('o68.horaires'), t('o68.horairesDetail')]);
   if (state.fulfillment?.pickup) lignes.push(['🤝', t('contact.retrait'), t('contact.retraitDetail')]);
+  lignes.push(['📍', t('o68.lieux'), t('o68.lieuxDetail')]);
   if (state.fulfillment?.delivery) lignes.push(['🛵', t('contact.livraison'), t('contact.livraisonDetail')]);
   lignes.push(['💶', t('contact.especes'), t('contact.especesDetail')]);
 

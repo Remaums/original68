@@ -10,10 +10,9 @@ export const DAYS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
 /** Horaires par défaut : ouvert tous les jours de 10 h à 22 h. */
 export function defaultHours() {
   return Object.fromEntries(
-    // 13h–00h, sept jours sur sept : les horaires de la maison, ceux que le
-    // bandeau de la boutique annonce. La plage franchit minuit, ce que la
-    // lecture plus bas sait faire (`to + 24 h` quand `to` précède `from`).
-    DAYS.map((day) => [day, { closed: false, from: '13:00', to: '00:00' }])
+    // 12h–22h, sept jours sur sept : les horaires d'Original68, ceux que
+    // l'accueil annonce. Ils se changent dans l'admin, rubrique Ouverture.
+    DAYS.map((day) => [day, { closed: false, from: '12:00', to: '22:00' }])
   );
 }
 
